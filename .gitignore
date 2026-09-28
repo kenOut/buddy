@@ -1,0 +1,12 @@
+# OS
+.DS_Store
+
+# Generated marketing/demo deliverables (large binaries, rendered
+# separately) — not part of the application itself
+deck/
+brag-output/
+brag-output-*/
+
+# Editor
+.vscode/
+.idea/

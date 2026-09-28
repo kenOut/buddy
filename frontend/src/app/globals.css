@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+:root {
+  /* Buddy brand palette — remapped to Kowri's actual brand identity
+   * (kowri.app): primary green #00B74F with a lime #A4D233 accent,
+   * Apple-adjacent neutrals (#1d1d1f / #6e6e73 / #e8e8ed / #f5f5f7).
+   * Token names are unchanged so every existing `bg-buddy-*`/`text-buddy-*`
+   * class across the app — including BuddyIllustration's SVG fills —
+   * picks up the new values automatically. */
+  --buddy-navy: #1d1d1f;
+  --buddy-cyan: #00b74f;
+  --buddy-aurora: #a4d233;
+  --buddy-sunrise: #f2a93b;
+  --buddy-coral: #ff6b6b;
+  --buddy-cloud: #ffffff;
+  --buddy-surface: #ffffff;
+  --buddy-text-primary: #1d1d1f;
+  --buddy-text-secondary: #6e6e73;
+  --buddy-border: #e8e8ed;
+
+  --background: var(--buddy-cloud);
+  --foreground: var(--buddy-text-primary);
+
+  /* aliases used across existing components */
+  --buddy-primary: var(--buddy-cyan);
+  --buddy-primary-dark: #049944;
+  --buddy-accent: var(--buddy-sunrise);
+  --buddy-muted: var(--buddy-text-secondary);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-buddy-navy: var(--buddy-navy);
+  --color-buddy-cyan: var(--buddy-cyan);
+  --color-buddy-aurora: var(--buddy-aurora);
+  --color-buddy-sunrise: var(--buddy-sunrise);
+  --color-buddy-coral: var(--buddy-coral);
+  --color-buddy-cloud: var(--buddy-cloud);
+  --color-buddy-surface: var(--buddy-surface);
+  --color-buddy-text-primary: var(--buddy-text-primary);
+  --color-buddy-text-secondary: var(--buddy-text-secondary);
+
+  --color-buddy-primary: var(--buddy-primary);
+  --color-buddy-primary-dark: var(--buddy-primary-dark);
+  --color-buddy-accent: var(--buddy-accent);
+  --color-buddy-surface: var(--buddy-surface);
+  --color-buddy-border: var(--buddy-border);
+  --color-buddy-muted: var(--buddy-muted);
+
+  --font-sans: var(--font-inter);
+  --font-heading: var(--font-jakarta);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* Deliberately no `prefers-color-scheme: dark` override — this app
+ * always renders on Kowri's white/light theme regardless of the
+ * viewer's system preference. Several components (Badge tones, status
+ * pills) use fixed Tailwind utility colors chosen for contrast against
+ * a light background; auto-switching to a dark background without
+ * auditing every one of those would silently break legibility (as it
+ * did here: --buddy-navy, used for every heading, was never given a
+ * dark-mode value, so heading text rendered near-black on a near-black
+ * background for anyone with a dark-mode system). */
+
+html {
+  /* Keeps native form controls (select dropdowns, scrollbars) light
+   * regardless of system preference, matching the rest of the page. */
+  color-scheme: light;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+.font-heading {
+  font-family: var(--font-heading), var(--font-sans), sans-serif;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
