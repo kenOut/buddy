@@ -139,4 +139,4 @@ def test_unimplemented_real_provider_cannot_silently_fall_back_to_mock():
 
 
 def test_email_provider_types_lists_only_implemented_providers():
-    assert EMAIL_PROVIDER_TYPES == ["mock"]
+    assert EMAIL_PROVIDER_TYPES == ["mock", "smtp"]

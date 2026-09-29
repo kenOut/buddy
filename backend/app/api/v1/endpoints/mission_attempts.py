@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
-from app.core.employee_auth import assert_caller_is_employee, get_optional_employee_session
+from app.core.employee_auth import assert_caller_is_employee, require_employee_session
 from app.schemas.mission_attempt import (
     MissionAttemptCreate,
     MissionAttemptRead,
@@ -35,7 +35,7 @@ async def get_mission_scenario(
     mission_id: str,
     employee_id: str,
     db: AsyncSession = Depends(get_db),
-    session_employee_id: str | None = Depends(get_optional_employee_session),
+    session_employee_id: str | None = Depends(require_employee_session),
 ):
     assert_caller_is_employee(employee_id, session_employee_id)
     mission = await _assert_owns_mission(db, mission_id, employee_id)
@@ -50,7 +50,7 @@ async def get_mission_quiz(
     mission_id: str,
     employee_id: str,
     db: AsyncSession = Depends(get_db),
-    session_employee_id: str | None = Depends(get_optional_employee_session),
+    session_employee_id: str | None = Depends(require_employee_session),
 ):
     assert_caller_is_employee(employee_id, session_employee_id)
     mission = await _assert_owns_mission(db, mission_id, employee_id)
@@ -65,7 +65,7 @@ async def get_mission_attempt(
     mission_id: str,
     employee_id: str,
     db: AsyncSession = Depends(get_db),
-    session_employee_id: str | None = Depends(get_optional_employee_session),
+    session_employee_id: str | None = Depends(require_employee_session),
 ):
     assert_caller_is_employee(employee_id, session_employee_id)
     await _assert_owns_mission(db, mission_id, employee_id)
@@ -79,7 +79,7 @@ async def get_mission_attempt(
 async def create_mission_attempt(
     payload: MissionAttemptCreate,
     db: AsyncSession = Depends(get_db),
-    session_employee_id: str | None = Depends(get_optional_employee_session),
+    session_employee_id: str | None = Depends(require_employee_session),
 ):
     assert_caller_is_employee(payload.employee_id, session_employee_id)
     await _assert_owns_mission(db, payload.mission_id, payload.employee_id)
@@ -93,7 +93,7 @@ async def update_mission_attempt(
     attempt_id: str,
     payload: MissionAttemptUpdate,
     db: AsyncSession = Depends(get_db),
-    session_employee_id: str | None = Depends(get_optional_employee_session),
+    session_employee_id: str | None = Depends(require_employee_session),
 ):
     attempt = await mission_attempt_service.get_attempt_by_id(db, attempt_id)
     if attempt is None:
@@ -115,7 +115,7 @@ async def submit_mission_attempt(
     attempt_id: str,
     payload: MissionAttemptSubmit,
     db: AsyncSession = Depends(get_db),
-    session_employee_id: str | None = Depends(get_optional_employee_session),
+    session_employee_id: str | None = Depends(require_employee_session),
 ):
     attempt = await mission_attempt_service.get_attempt_by_id(db, attempt_id)
     if attempt is None:

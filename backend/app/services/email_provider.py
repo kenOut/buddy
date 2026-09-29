@@ -43,15 +43,18 @@ tags only (see email_service.py's own usage — email_type/employee_id);
 never the raw invitation token or anything else sensitive.
 """
 
+import asyncio
+import smtplib
+import ssl
 from dataclasses import dataclass, field
+from email.message import EmailMessage
 from typing import ClassVar, Protocol
 from uuid import uuid4
 
-# Valid values for `settings.email_provider`. "mock" is the only
-# implemented one in P3 — deliberately a short list, exactly like
-# WORKSPACE_PROVIDER_TYPES was before a real provider existed for that
-# boundary either.
-EMAIL_PROVIDER_TYPES = ["mock"]
+# Valid values for `settings.email_provider`. "mock" was the only
+# implemented one in P3; P3.1 adds "smtp" (SMTPEmailProvider, below) —
+# still a short, explicit list, exactly like WORKSPACE_PROVIDER_TYPES.
+EMAIL_PROVIDER_TYPES = ["mock", "smtp"]
 
 
 @dataclass
@@ -178,12 +181,126 @@ class MockEmailProvider:
         cls._sent.clear()
 
 
+def _sanitize_smtp_error(exc: Exception) -> str:
+    """Builds a short, operator-safe string from an smtplib exception —
+    deliberately does NOT interpolate `str(exc)` directly. smtplib
+    itself never echoes the password back into an exception message,
+    but this stays structural rather than trusting that: only the
+    exception's class name and, for the SMTPResponseException family,
+    the server's own numeric code are used. Never includes host,
+    username, or password."""
+    code = getattr(exc, "smtp_code", None)
+    if code is not None:
+        return f"{type(exc).__name__} (SMTP code {code})"
+    return type(exc).__name__
+
+
+class SMTPEmailProvider:
+    """P3.1 — Real Gmail SMTP Welcome Email Delivery. A real provider
+    implementing the same `EmailProvider` Protocol `MockEmailProvider`
+    does — nothing above this in the call chain (email_service.py,
+    provisioning_service.py) needs to know or care which one is active.
+
+    Uses only the standard library (`smtplib`/`email.message`, `ssl`) —
+    no new dependency for one SMTP integration. `smtplib` is a blocking
+    (synchronous) API; the actual network call runs inside
+    `asyncio.to_thread` so it doesn't block this app's event loop, the
+    same reasoning any other blocking I/O call in an async app would
+    need.
+
+    Built once per send (mirrors `MockEmailProvider()` being constructed
+    fresh by `get_email_provider` on every call) — connects, sends, and
+    disconnects within a single `send_email` call rather than holding a
+    long-lived SMTP connection across requests, which keeps this exactly
+    as stateless as the Protocol's other implementation.
+    """
+
+    def __init__(
+        self, *, host: str, port: int, username: str, password: str, from_email: str, from_name: str
+    ) -> None:
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
+        self.from_email = from_email
+        self.from_name = from_name
+
+    def _build_message(self, *, to: str, subject: str, html: str, text: str) -> EmailMessage:
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = f"{self.from_name} <{self.from_email}>" if self.from_name else self.from_email
+        msg["To"] = to
+        msg.set_content(text)
+        msg.add_alternative(html, subtype="html")
+        return msg
+
+    def _send_sync(self, msg: EmailMessage) -> None:
+        """Runs on a worker thread via asyncio.to_thread — connect,
+        STARTTLS, authenticate, send, close, in that order (Section 6).
+        Never logs `self.password` or includes it in any exception this
+        method lets propagate — smtplib.SMTP.login raises
+        SMTPAuthenticationError with the SERVER's rejection message, not
+        the password the caller supplied."""
+        context = ssl.create_default_context()
+        with smtplib.SMTP(self.host, self.port, timeout=15) as server:
+            server.starttls(context=context)
+            server.login(self.username, self.password)
+            server.send_message(msg)
+
+    async def send_email(
+        self,
+        *,
+        to: str,
+        subject: str,
+        html: str,
+        text: str,
+        metadata: dict[str, str] | None = None,
+    ) -> EmailSendResult:
+        msg = self._build_message(to=to, subject=subject, html=html, text=text)
+        try:
+            await asyncio.to_thread(self._send_sync, msg)
+        except smtplib.SMTPAuthenticationError as exc:
+            return EmailSendResult(accepted=False, error=f"SMTP authentication failed: {_sanitize_smtp_error(exc)}")
+        except smtplib.SMTPException as exc:
+            return EmailSendResult(accepted=False, error=f"SMTP send failed: {_sanitize_smtp_error(exc)}")
+        except OSError as exc:
+            # Connection-level failures (DNS, refused, timeout) — not an
+            # smtplib.SMTPException subclass, since the connection never
+            # reached the protocol stage.
+            return EmailSendResult(accepted=False, error=f"SMTP connection failed: {_sanitize_smtp_error(exc)}")
+
+        return EmailSendResult(
+            accepted=True,
+            provider_ref=f"smtp:{self.host}:{to}",
+            message_id=msg.get("Message-ID"),
+        )
+
+
 def get_email_provider(provider_name: str) -> EmailProvider:
     if provider_name == "mock":
         return MockEmailProvider()
-    # No real provider is implemented in P3 (Section 5/21) — fail
-    # loudly rather than silently falling back to MockEmailProvider,
-    # exactly like get_workspace_provider's own google_drive branch.
+    if provider_name == "smtp":
+        # Settings' own _require_smtp_config_when_selected validator
+        # already guarantees these are non-None whenever
+        # email_provider == "smtp" — imported locally to avoid a
+        # circular import at module load time (config.py does not
+        # import this module, but keeping the dependency direction
+        # request-scoped-only matches every other provider factory in
+        # this project).
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        return SMTPEmailProvider(
+            host=settings.smtp_host,
+            port=settings.smtp_port,
+            username=settings.smtp_username,
+            password=settings.smtp_password,
+            from_email=settings.email_from,
+            from_name=settings.email_from_name,
+        )
+    # No other provider is implemented (Section 5/21) — fail loudly
+    # rather than silently falling back to MockEmailProvider, exactly
+    # like get_workspace_provider's own google_drive branch.
     raise EmailProviderError(
         f"Unknown or unimplemented email provider: {provider_name!r}. "
         f"Supported values: {EMAIL_PROVIDER_TYPES}. Set EMAIL_PROVIDER=mock, "

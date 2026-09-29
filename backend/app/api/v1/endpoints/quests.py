@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.core.admin_auth import require_admin_session
-from app.core.employee_auth import assert_caller_is_employee, get_optional_employee_session
+from app.core.employee_auth import assert_caller_is_employee, require_employee_session
 from app.schemas.ai_evaluation import AIEvaluationResponse
 from app.schemas.quest import (
     EmployeeQuestResponse,
@@ -146,7 +146,7 @@ async def get_quest_eligibility(
     quest_id: str,
     employee_id: str,
     db: AsyncSession = Depends(get_db),
-    session_employee_id: str | None = Depends(get_optional_employee_session),
+    session_employee_id: str | None = Depends(require_employee_session),
 ):
     """Access-eligibility only — never evaluation criteria or any other
     hidden Quest content (see QuestEligibilityResponse)."""
@@ -171,7 +171,7 @@ async def get_employee_quest(
     quest_id: str,
     employee_id: str,
     db: AsyncSession = Depends(get_db),
-    session_employee_id: str | None = Depends(get_optional_employee_session),
+    session_employee_id: str | None = Depends(require_employee_session),
 ):
     """The employee-safe Quest Workspace contract (Stage 2's
     EmployeeQuestResponse, wired to a real route for the first time).
@@ -207,7 +207,7 @@ async def get_employee_quest(
 async def list_employee_quests(
     employee_id: str,
     db: AsyncSession = Depends(get_db),
-    session_employee_id: str | None = Depends(get_optional_employee_session),
+    session_employee_id: str | None = Depends(require_employee_session),
 ):
     """Phase 8H-4 — the employee's own Quest list (the previously-missing
     discovery surface the launch audit flagged: before this, a Quest was
@@ -248,7 +248,7 @@ async def list_employee_quests(
 async def create_quest_attempt(
     payload: QuestAttemptCreate,
     db: AsyncSession = Depends(get_db),
-    session_employee_id: str | None = Depends(get_optional_employee_session),
+    session_employee_id: str | None = Depends(require_employee_session),
 ):
     """Eligibility is now enforced here, not just existence — knowing a
     quest_id is no longer enough to start an attempt on it (Stage 3
@@ -280,7 +280,7 @@ async def get_quest_attempt(
     attempt_id: str,
     employee_id: str,
     db: AsyncSession = Depends(get_db),
-    session_employee_id: str | None = Depends(get_optional_employee_session),
+    session_employee_id: str | None = Depends(require_employee_session),
 ):
     """`employee_id` is now required and checked against ownership (Stage
     4 spec §24) — previously this endpoint returned any attempt by id
@@ -302,7 +302,7 @@ async def update_quest_attempt(
     attempt_id: str,
     payload: QuestAttemptUpdate,
     db: AsyncSession = Depends(get_db),
-    session_employee_id: str | None = Depends(get_optional_employee_session),
+    session_employee_id: str | None = Depends(require_employee_session),
 ):
     """Autosave. Rejects once the attempt is SUBMITTED/COMPLETED (409) —
     a submitted quest must not silently become editable again."""
@@ -324,7 +324,7 @@ async def submit_quest_attempt(
     attempt_id: str,
     payload: QuestAttemptSubmit,
     db: AsyncSession = Depends(get_db),
-    session_employee_id: str | None = Depends(get_optional_employee_session),
+    session_employee_id: str | None = Depends(require_employee_session),
 ):
     """Re-validates the full eligibility chain at submit time, not just
     ownership — eligibility can change between starting and submitting
@@ -385,7 +385,7 @@ async def get_quest_attempt_evaluation(
     attempt_id: str,
     employee_id: str,
     db: AsyncSession = Depends(get_db),
-    session_employee_id: str | None = Depends(get_optional_employee_session),
+    session_employee_id: str | None = Depends(require_employee_session),
 ):
     """Returns null if no evaluation exists yet — either evaluation
     hasn't been triggered, or the quest has no capability mappings at
@@ -413,7 +413,7 @@ async def evaluate_quest_attempt(
     attempt_id: str,
     payload: EvaluateQuestAttemptRequest,
     db: AsyncSession = Depends(get_db),
-    session_employee_id: str | None = Depends(get_optional_employee_session),
+    session_employee_id: str | None = Depends(require_employee_session),
 ):
     """Runs the full deterministic -> AI -> CapabilityEvidence ->
     CapabilityProfile pipeline (quest_evaluation_service.evaluate_attempt).

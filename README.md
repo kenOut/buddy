@@ -197,14 +197,85 @@ race each other to alter the schema.
 
 | Variable (backend `.env`) | Default | Purpose |
 |---|---|---|
+| `ENVIRONMENT` | `development` | `production` activates every fail-closed check below, and disables demo-data seeding (see P4.1/P5) |
 | `DATABASE_URL` | SQLite file | SQLAlchemy async connection string |
-| `CORS_ORIGINS` | `http://localhost:3000` | Allowed frontend origin(s) |
+| `CORS_ORIGINS` | `http://localhost:3000` | Allowed frontend origin(s), comma-separated — **required in production** |
+| `TRUSTED_HOSTS` | `*` (accept any Host) | Comma-separated allowlist for the Host header, enforced by `TrustedHostMiddleware` — optional; leave unset if a reverse proxy/load balancer already validates this in front of the app |
+| `MAX_REQUEST_BODY_BYTES` | `2097152` (2MB) | Backstop request body size limit (413 beyond this) |
+| `ENABLE_API_DOCS` | unset (auto) | `/docs`, `/redoc`, `/openapi.json` — enabled by default outside production, disabled by default in production; set `true`/`false` to override either way |
 | `DEMO_EMPLOYEE_EMAIL` | `michael.mensah@buddy.dev` | Who `/onboarding/bundle/demo` resolves to |
-| `ADMIN_PASSWORD` | `kowri-admin` | Manager portal login |
-| `ADMIN_SESSION_SECRET` | dev-only value | Signs the admin session cookie — override in production |
+| `ADMIN_PASSWORD` | dev-only value | Manager portal login — **required in production** |
+| `ADMIN_SESSION_SECRET` | dev-only value | Signs the admin session cookie — **required in production** |
+| `EMPLOYEE_SESSION_SECRET` | dev-only value | Signs the employee session cookie — **required in production** |
+| `INVITATION_TOKEN_SECRET` | dev-only value | HMACs invitation tokens at rest — **required in production** |
+| `PROVISIONING_API_KEY` | dev-only value | The service-to-service provisioning credential — **required in production** |
+| `APP_BASE_URL` | `http://localhost:3000` | Base URL used to build the invitation link in the welcome email — **required in production** |
 | `AI_PROVIDER` | `mock` | AI evaluation provider — `mock` is a deterministic, rule-based stand-in (no external API key required); implement the `AIProvider` protocol in `app/services/ai_provider.py` to add a real one |
 | `WORKSPACE_PROVIDER` | `mock` | Grants workspace access once an employee is "ready" — `mock` needs no credentials; implement `WorkspaceProvider` in `app/services/workspace_provider.py` for a real Google Drive integration |
+| `EMAIL_PROVIDER` | `mock` | Sends the welcome invitation email — `mock` needs no credentials and is the default in every environment, including production, until you explicitly opt in; `smtp` (P3.1, `SMTPEmailProvider`) sends real email over SMTP — see "Email delivery" below |
+| `SMTP_HOST` | unset | SMTP server host (e.g. `smtp.gmail.com`) — **required when `EMAIL_PROVIDER=smtp`** |
+| `SMTP_PORT` | `587` | SMTP port (STARTTLS) |
+| `SMTP_USERNAME` | unset | SMTP auth username — **required when `EMAIL_PROVIDER=smtp`** |
+| `SMTP_PASSWORD` | unset | SMTP auth password (a Google **app password**, never your real Google account password — see below) — **required when `EMAIL_PROVIDER=smtp`** |
+| `EMAIL_FROM` | unset | The `From` address on the sent email — **required when `EMAIL_PROVIDER=smtp`** |
+| `EMAIL_FROM_NAME` | `Heimdall` | The `From` display name |
+
+Every "**required in production**" variable above fails the app closed at
+startup (a `ValueError` naming exactly which env vars are missing, never
+a configured value) when `ENVIRONMENT=production` and it isn't set —
+see `app/core/config.py`'s `_fail_closed_in_production`. Outside
+production, all of them fall back to the same well-known dev-only
+defaults this project has always used, so local dev and the test suite
+need zero setup.
 
 | Variable (frontend `.env.local`) | Default | Purpose |
 |---|---|---|
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8000/api/v1` | Backend base URL the frontend calls |
+
+## Email delivery
+
+The welcome email ("Meet Heimdall", sent when an employee is provisioned)
+goes through one of two providers, chosen by `EMAIL_PROVIDER`:
+
+- **`mock` (default, every environment until you opt in).** No network
+  call, no credentials. Local dev and the entire automated test suite run
+  against this — `MockEmailProvider.sent_emails()` is how tests inspect
+  what would have been sent. Nothing here changes what a real vendor sees.
+- **`smtp` (P3.1, `SMTPEmailProvider`).** Sends a real email over SMTP
+  with STARTTLS (`smtplib`/`email.message`, standard library only — no new
+  dependency). Never the default; selecting it requires `SMTP_HOST`,
+  `SMTP_USERNAME`, `SMTP_PASSWORD`, and `EMAIL_FROM` to all be set, or the
+  app refuses to start (`Settings._require_smtp_config_when_selected`) —
+  there is no silent fallback to `mock`, since that would make the app
+  report `email_sent=true` while nothing was actually sent.
+
+### Gmail / Google Workspace setup (manual/integration test path)
+
+This is for a real end-to-end delivery test, not for CI or local dev.
+
+1. Use a **test** Gmail or Google Workspace account — never a real
+   employee's inbox, and never a production account.
+2. Generate a Google **app password** for that account (Google Account →
+   Security → 2-Step Verification → App passwords). **Never put your
+   normal Google account password into `SMTP_PASSWORD`** — only a
+   generated app password, which Google can revoke independently of your
+   real login credential.
+3. Set these as local environment variables (or in a git-ignored `.env` —
+   never commit a filled-in value):
+   ```
+   EMAIL_PROVIDER=smtp
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_USERNAME=<test account address>
+   SMTP_PASSWORD=<the app password>
+   EMAIL_FROM=<test account address>
+   EMAIL_FROM_NAME=Heimdall
+   ```
+4. Start the backend with those variables set, provision a test employee
+   through the normal flow, and check the test inbox for the welcome
+   email. Click "Meet Heimdall" from the same machine/browser the app is
+   running on — if `APP_BASE_URL` still points at `http://localhost:3000`,
+   the link will only work from that machine, not from another device.
+
+No database migration is needed to switch providers — this is
+application-layer configuration only.

@@ -146,6 +146,23 @@ class Settings(BaseSettings):
     # email_provider.get_email_provider's own explicit failure instead.
     email_provider: str = "mock"
 
+    # P3.1 — Real Gmail SMTP Welcome Email Delivery. Only read/required
+    # when email_provider == "smtp" (see _require_smtp_config_when_
+    # selected below) — every field stays optional at the type level so
+    # "mock" (the default, every dev/test process) never needs any of
+    # this configured. smtp_port defaults to 587 (STARTTLS) since that's
+    # correct for Gmail SMTP and virtually every other real provider;
+    # the other four have no safe default (there is no "dev-only insecure
+    # SMTP credential" the way there is for this app's own session
+    # secrets — a wrong SMTP credential just fails at send time, not a
+    # security hole, so there's nothing to protect by inventing one).
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    email_from: str | None = None
+    email_from_name: str = "Heimdall"
+
     # The public base URL the welcome email's "Meet Heimdall" CTA is
     # built against (`{app_base_url}/onboarding/invite/{token}`).
     app_base_url: str | None = None
@@ -183,6 +200,36 @@ class Settings(BaseSettings):
                 + ", ".join(missing_env_vars)
                 + ". Set these in the environment before starting in production."
             )
+        return self
+
+    @model_validator(mode="after")
+    def _require_smtp_config_when_selected(self) -> "Settings":
+        """P3.1 — Real Gmail SMTP Welcome Email Delivery. Unlike
+        `_fail_closed_in_production` above, this fires in EVERY
+        environment, not just production — choosing EMAIL_PROVIDER=smtp
+        always means "I intend to really send email," so there is no
+        "dev-safe default" to silently fall back to; doing so would mean
+        the app reports `email_sent=true` while nothing was actually
+        sent, exactly the false-positive this phase's brief calls out as
+        dangerous. EMAIL_PROVIDER stays "mock" by default (never smtp),
+        so this never fires for a process that hasn't explicitly opted
+        in.
+        """
+        if self.email_provider == "smtp":
+            missing = [
+                name
+                for name, value in (
+                    ("SMTP_HOST", self.smtp_host),
+                    ("SMTP_USERNAME", self.smtp_username),
+                    ("SMTP_PASSWORD", self.smtp_password),
+                    ("EMAIL_FROM", self.email_from),
+                )
+                if not value
+            ]
+            if missing:
+                raise ValueError(
+                    "EMAIL_PROVIDER=smtp requires: " + ", ".join(missing) + ". Set these in the environment."
+                )
         return self
 
     @property
