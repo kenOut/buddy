@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { BuddyIllustration } from "@/components/buddy/BuddyIllustration";
 import { BuddySpeech } from "@/components/buddy/BuddySpeech";
 import { MissionList } from "@/components/onboarding/MissionList";
@@ -37,6 +39,14 @@ export function MissionsScene() {
       </div>
 
       <MissionList assignments={bundle.mission_assignments} />
+
+      <p className="text-sm text-buddy-text-secondary">
+        Missions are the checklist. For the real-work challenges that count toward readiness, see{" "}
+        <Link href="/onboarding/quests" className="font-medium text-buddy-primary hover:underline">
+          Your Quests
+        </Link>
+        .
+      </p>
 
       <div className="flex items-center justify-between pt-2">
         <SceneNav />

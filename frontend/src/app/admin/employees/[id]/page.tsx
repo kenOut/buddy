@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { PersonCard } from "@/components/onboarding/PersonCard";
+import { EmployeeAvatarUpload } from "@/components/admin/EmployeeAvatarUpload";
 import { EmployeeStatusPill, SessionStatusPill } from "@/components/admin/StatusPill";
 import { EmployeeDevelopmentSnapshot } from "@/components/analytics/EmployeeDevelopmentSnapshot";
 import { Badge } from "@/components/ui/Badge";
@@ -11,10 +13,21 @@ import type { OnboardingBundle } from "@/lib/types";
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 
 async function getBundle(employeeId: string): Promise<OnboardingBundle | null> {
+  // P1 — Identity & Invitation Foundation: GET /onboarding/bundle/{id}
+  // is now admin-gated server-side. This is a Server Component fetch,
+  // so it never carries the browser's cookies automatically the way
+  // `credentials: "include"` does client-side — the admin's own session
+  // cookie has to be forwarded explicitly, or this (already-working,
+  // already-authenticated-in-the-browser) admin page would start
+  // getting 401s once the backend route stopped being open to everyone.
+  const cookieStore = await cookies();
+  const cookieHeader = cookieStore.getAll().map((c) => `${c.name}=${c.value}`).join("; ");
+
   const res = await fetch(`${API_BASE_URL}/onboarding/bundle/${employeeId}`, {
     cache: "no-store",
+    headers: { Cookie: cookieHeader },
   });
-  if (res.status === 404) return null;
+  if (res.status === 404 || res.status === 401) return null;
   if (!res.ok) throw new Error("Failed to load employee");
   return res.json();
 }
@@ -36,11 +49,14 @@ export default async function EmployeeDetailPage({
       </Link>
 
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">{employee.full_name}</h1>
-          <p className="text-sm text-buddy-muted">
-            {role?.title ?? employee.job_title} · {department?.name ?? "No department"}
-          </p>
+        <div className="flex items-center gap-4">
+          <EmployeeAvatarUpload employee={employee} />
+          <div>
+            <h1 className="text-2xl font-semibold">{employee.full_name}</h1>
+            <p className="text-sm text-buddy-muted">
+              {role?.title ?? employee.job_title} · {department?.name ?? "No department"}
+            </p>
+          </div>
         </div>
         <EmployeeStatusPill status={employee.status} />
       </div>

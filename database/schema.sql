@@ -1,4 +1,26 @@
 -- Buddy Onboarding System — Supabase/Postgres schema
+--
+-- P4 — PostgreSQL + Alembic Production Database Foundation: this file
+-- is REFERENCE / HISTORICAL ONLY as of P4. It is not applied by any
+-- code, script, or deploy step, and must not be run against a real
+-- environment — doing so would create a schema with no Alembic
+-- version stamped, which `alembic upgrade head` cannot safely reconcile.
+--
+-- The authoritative production schema is now:
+--   backend/alembic/versions/   (Alembic migrations, generated from
+--                                 backend/app/models/*.py)
+-- Provision a real database with:
+--   cd backend && alembic upgrade head
+-- See backend/alembic/env.py's module docstring and the repository
+-- README's "Database migrations" section for the full explanation.
+--
+-- Kept in the repository as a single-file, human-readable snapshot of
+-- the schema's shape — useful for a quick read without checking out
+-- every model file — not as a second thing to manually edit. It will
+-- drift from the real schema over time and that is expected; do not
+-- treat it as current.
+--
+-- (Original header, pre-P4:)
 -- Run in the Supabase SQL editor, or via `supabase db push`.
 -- Mirrors backend/app/models/*.py (SQLAlchemy uses portable String(36) UUIDs
 -- so the same models also run on SQLite for local dev without Supabase).
@@ -53,9 +75,20 @@ create table if not exists employees (
   avatar_url text,
   status text not null default 'invited'
     check (status in ('invited', 'onboarding', 'active')),
+  -- P1 — Identity & Invitation Foundation. A stable external identity
+  -- for employees provisioned from a real HR/IdP system — nullable,
+  -- since today's employees (demo seed data, admin-created rows) have
+  -- no such provider. Never use email as this key: it is a mutable
+  -- contact attribute, not an identity.
+  identity_provider text,
+  external_subject text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+create unique index if not exists uq_employee_external_identity
+  on employees(identity_provider, external_subject)
+  where identity_provider is not null and external_subject is not null;
 
 -- ── projects ─────────────────────────────────────────────────────
 create table if not exists projects (
@@ -124,7 +157,11 @@ create table if not exists mission_attempts (
 -- ── onboarding_sessions ──────────────────────────────────────────
 create table if not exists onboarding_sessions (
   id uuid primary key default gen_random_uuid(),
-  employee_id uuid not null references employees(id) on delete cascade,
+  -- P2 — Provisioning Boundary. `unique` here (uq_onboarding_session_employee
+  -- in SQLAlchemy) is what makes eager session creation during
+  -- provisioning safe under real concurrency — see
+  -- onboarding_service.get_or_create_session.
+  employee_id uuid not null unique references employees(id) on delete cascade,
   current_scene text not null default 'welcome'
     check (current_scene in
       ('welcome','department','team','reporting_line','role','missions','assessment','completion')),
@@ -169,6 +206,38 @@ create index if not exists idx_missions_department on missions(department_id);
 create index if not exists idx_mission_assignments_employee on mission_assignments(employee_id);
 create index if not exists idx_onboarding_sessions_employee on onboarding_sessions(employee_id);
 create index if not exists idx_assessments_session on assessments(onboarding_session_id);
+
+-- ── employee_invitations ─────────────────────────────────────────
+-- P1 — Identity & Invitation Foundation. A temporary credential
+-- granting entry into onboarding — deliberately independent of
+-- onboarding_sessions (persistent progress) and never reusing its id
+-- as a bearer token. Only a hash of the raw token is ever stored; the
+-- raw value is generated at issue time, returned once, and never
+-- persisted. Historical (used/revoked) rows are kept, never deleted.
+create table if not exists employee_invitations (
+  id uuid primary key default gen_random_uuid(),
+  employee_id uuid not null references employees(id) on delete cascade,
+  token_hash text not null,
+  expires_at timestamptz not null,
+  used_at timestamptz,
+  revoked_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists uq_employee_invitation_token_hash
+  on employee_invitations(token_hash);
+-- At most one still-usable invitation per employee. Expiry is
+-- time-based and can't be expressed in a static partial index, so the
+-- service layer (invitation_service.issue_invitation) explicitly
+-- revokes any existing un-used/un-revoked invitation before issuing a
+-- new one — this index backs that as a real database guarantee against
+-- a race between two concurrent issue calls, not just app-level intent.
+create unique index if not exists uq_employee_invitation_active
+  on employee_invitations(employee_id)
+  where used_at is null and revoked_at is null;
+
+create index if not exists idx_employee_invitations_employee on employee_invitations(employee_id);
 
 -- ── capabilities ─────────────────────────────────────────────────
 -- Phase 3A: Adaptive Capability Intelligence. Global reference table —

@@ -30,7 +30,12 @@ async def admin_login(payload: AdminLoginRequest, response: Response):
         max_age=settings.admin_session_ttl_seconds,
         httponly=True,
         samesite="lax",
-        secure=False,  # local/dev over http; flip to True once served over https
+        # P5 — Production Security Hardening. Environment-aware, not
+        # hardcoded: production is expected to be served over https, so
+        # the cookie is marked Secure there (never sent over plain
+        # http); local/dev stays over http, where Secure would silently
+        # break the cookie entirely.
+        secure=settings.environment == "production",
     )
     return AdminSessionStatus(authenticated=True)
 

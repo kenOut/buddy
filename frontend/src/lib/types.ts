@@ -65,6 +65,8 @@ export interface Employee {
   start_date: string | null;
   avatar_url: string | null;
   status: EmployeeStatus;
+  identity_provider: string | null;
+  external_subject: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -432,6 +434,22 @@ export interface QuestEligibility {
   matching_assignment_types: string[];
 }
 
+/** Phase 8H-4 — one card's worth of data for the employee's own Quest
+ * list (GET /employees/{employee_id}/quests). Lighter than
+ * `EmployeeQuest`: no tasks/evidence, since a list of cards only needs
+ * enough to decide which Quest to open, not its full work content.
+ * `attempt_status` is `null` when the employee has never started this
+ * Quest — opening the list itself never creates an attempt. */
+export interface EmployeeQuestSummary {
+  id: string;
+  title: string;
+  description: string | null;
+  quest_type: QuestType;
+  difficulty: QuestDifficulty;
+  required_for_readiness: boolean;
+  attempt_status: QuestAttemptStatus | null;
+}
+
 /** Generic, quest-type-agnostic work record — the same three fields
  * (plus which tasks are done) regardless of whether this is an
  * INVESTIGATE, BUILD, or DESIGN quest.
@@ -536,6 +554,7 @@ export interface QuestAssignment {
   department_id: string | null;
   role_id: string | null;
   active: boolean;
+  required: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -634,6 +653,7 @@ export interface QuestAssignmentInput {
   employee_id?: string | null;
   department_id?: string | null;
   role_id?: string | null;
+  required?: boolean;
 }
 
 // ---- Phase 6C: Adaptive Capability Loop ----

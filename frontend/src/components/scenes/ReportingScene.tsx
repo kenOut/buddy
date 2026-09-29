@@ -72,23 +72,25 @@ export function ReportingScene() {
 
   const { employee, manager, supervisor, department } = bundle;
 
+  // Top-down, matching a real org chart: the department you're joining,
+  // then the chain of command, ending with you.
   const nodes: ChainNode[] = [
+    {
+      label: "Department",
+      title: department?.name ?? "—",
+      initials: (department?.name ?? "?").slice(0, 2).toUpperCase(),
+      accent: "var(--buddy-coral)",
+    },
+    ...(manager ? [personNode("Manager", manager, "var(--buddy-sunrise)")] : []),
+    ...(supervisor
+      ? [personNode("Supervisor", supervisor, "var(--buddy-aurora)")]
+      : []),
     {
       label: "You",
       title: employee.full_name,
       subtitle: employee.job_title ?? undefined,
       initials: initials(employee.full_name),
       accent: "var(--buddy-cyan)",
-    },
-    ...(supervisor
-      ? [personNode("Supervisor", supervisor, "var(--buddy-aurora)")]
-      : []),
-    ...(manager ? [personNode("Manager", manager, "var(--buddy-sunrise)")] : []),
-    {
-      label: "Department",
-      title: department?.name ?? "—",
-      initials: (department?.name ?? "?").slice(0, 2).toUpperCase(),
-      accent: "var(--buddy-coral)",
     },
   ];
 

@@ -2,13 +2,29 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.core.admin_auth import require_admin_session
 from app.core.config import get_settings
+from app.core.employee_auth import get_current_employee
+from app.models import Employee
 from app.schemas.assessment import AssessmentRead, AssessmentSubmit
 from app.schemas.onboarding_bundle import OnboardingBundle
 from app.schemas.onboarding_session import OnboardingSessionRead, OnboardingSessionUpdate
 from app.services import assessment_service, employee_service, onboarding_service
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
+
+
+@router.get("/bundle/me", response_model=OnboardingBundle)
+async def get_my_bundle(
+    employee: Employee = Depends(get_current_employee), db: AsyncSession = Depends(get_db)
+):
+    """P1 — Identity & Invitation Foundation. The production path: the
+    employee is derived from their authenticated session (see
+    core/employee_auth.py), never from a client-supplied id. This is
+    what a genuine invitation-exchange flow resolves onboarding through;
+    `/bundle/demo` below remains the zero-auth path for the existing
+    single-hardcoded-identity demo environment."""
+    return await onboarding_service.build_bundle(db, employee)
 
 
 @router.get("/bundle/demo", response_model=OnboardingBundle)
@@ -39,19 +55,19 @@ async def reset_demo(db: AsyncSession = Depends(get_db)):
     return await onboarding_service.build_bundle(db, employee)
 
 
-@router.get("/bundle/by-token/{session_token}", response_model=OnboardingBundle)
-async def get_bundle_by_token(session_token: str, db: AsyncSession = Depends(get_db)):
-    """Looks up a bundle by onboarding session id, used as an opaque access
-    token — the basis for a future personalized onboarding link, in place
-    of treating an employee's email as if it were a secret."""
-    bundle = await onboarding_service.get_bundle_by_session_token(db, session_token)
-    if bundle is None:
-        raise HTTPException(status_code=404, detail="Onboarding session not found")
-    return bundle
-
-
-@router.get("/bundle/{employee_id}", response_model=OnboardingBundle)
+@router.get(
+    "/bundle/{employee_id}",
+    response_model=OnboardingBundle,
+    dependencies=[Depends(require_admin_session)],
+)
 async def get_bundle(employee_id: str, db: AsyncSession = Depends(get_db)):
+    """P1 — Identity & Invitation Foundation. Previously open to any
+    caller who supplied an employee_id, with no authentication at all —
+    a cross-employee data exposure the P0 architecture audit flagged as
+    a Critical gap. Now admin-only (manager/support lookup of a specific
+    employee's bundle); the employee-facing equivalent is `/bundle/me`
+    above, which derives the employee from the caller's own session and
+    can never be pointed at someone else's data."""
     employee = await employee_service.get_employee(db, employee_id)
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee not found")

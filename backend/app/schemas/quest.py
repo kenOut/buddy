@@ -161,6 +161,45 @@ class EmployeeQuestResponse(ORMBase):
         return v
 
 
+class EmployeeQuestSummary(ORMBase):
+    """Phase 8H-4 — one card's worth of employee-safe Quest data for the
+    employee's own Quest list (GET /employees/{employee_id}/quests).
+    Deliberately lighter than EmployeeQuestResponse: no `tasks`/
+    `evidence` (a list of cards doesn't need each Quest's full work
+    content, only enough to decide which one to open), and structurally
+    just as incapable of carrying evaluation criteria/expected answers/
+    reference solutions as EmployeeQuestResponse is — same reasoning,
+    smaller shape. `attempt_status` is `None` when the employee has never
+    started this Quest (no QuestAttempt row exists yet — this list never
+    creates one just by being viewed); otherwise one of
+    QUEST_ATTEMPT_STATUSES exactly as persisted, never re-derived.
+
+    Both `required_for_readiness` and `attempt_status` default here
+    ONLY to satisfy Pydantic's ORM-passthrough validation against a bare
+    Quest row (which has neither attribute) — same reasoning as
+    EmployeeQuestResponse's own `required_for_readiness` default. The
+    one caller that constructs this schema (list_employee_quests) MUST
+    overlay both real values via `.model_copy(update=...)` immediately
+    after `model_validate`; the bare defaults must never reach a
+    client."""
+
+    id: str
+    title: str
+    description: str | None
+    quest_type: str
+    difficulty: str
+    required_for_readiness: bool = False
+    attempt_status: str | None = None
+
+    @field_validator("quest_type", "difficulty")
+    @classmethod
+    def _valid_choice(cls, v: str, info: ValidationInfo) -> str:
+        allowed = _CHOICES[info.field_name]
+        if v not in allowed:
+            raise ValueError(f"{info.field_name} must be one of {allowed}")
+        return v
+
+
 class QuestQualityCheck(ORMBase):
     """Phase 6B — one Quest Quality Validation check. `section` matches a
     Manager Quest Builder tab key 1:1 (basic-info/challenge/work-evidence/

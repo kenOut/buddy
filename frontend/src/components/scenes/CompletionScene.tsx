@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 import { BuddyIllustration } from "@/components/buddy/BuddyIllustration";
 import { Celebration } from "@/components/animations/Celebration";
@@ -77,6 +78,21 @@ export function CompletionScene() {
 
       <SlideUp delay={0.55} duration={0.4} className="w-full">
         <WorkspaceAccessStatus employeeId={bundle.employee.id} />
+      </SlideUp>
+
+      <SlideUp delay={0.6} duration={0.4} className="flex w-full flex-wrap items-center justify-center gap-4">
+        <Link
+          href="/onboarding/quests"
+          className="inline-flex items-center justify-center rounded-full bg-buddy-primary px-6 py-3 text-sm font-medium text-white shadow-lg shadow-buddy-primary/25 hover:bg-buddy-primary-dark"
+        >
+          Go to Your Quests
+        </Link>
+        <Link
+          href="/onboarding/journey"
+          className="text-sm font-medium text-buddy-primary hover:underline"
+        >
+          View your development journey →
+        </Link>
       </SlideUp>
 
       <SlideUp delay={0.7} duration={0.4} className="mt-4 w-full border-t border-buddy-border pt-6">

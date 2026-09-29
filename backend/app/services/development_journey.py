@@ -327,7 +327,7 @@ async def build_journey(db: AsyncSession, employee: Employee) -> DevelopmentJour
     quest_attempts = await quest_attempt_service.list_attempts_for_employee(db, employee.id)
     recommendations = await recommendation_service.list_for_employee(db, employee.id)
     evidence = await capability_service.list_evidence_for_employee(db, employee.id)
-    session = await onboarding_service.get_or_create_session(db, employee)
+    session, _created = await onboarding_service.get_or_create_session(db, employee)
 
     # Bulk-resolve every referenced Quest/Mission/attempt up front —
     # never one query per item.

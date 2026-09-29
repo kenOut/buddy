@@ -44,7 +44,10 @@ export function AssignPublishSection({
 
   const [assignmentType, setAssignmentType] = useState<QuestAssignmentType>("EMPLOYEE");
   const [targetId, setTargetId] = useState("");
+  const [newAssignmentRequired, setNewAssignmentRequired] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [requiredError, setRequiredError] = useState<string | null>(null);
+  const [togglingRequiredId, setTogglingRequiredId] = useState<string | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -73,12 +76,13 @@ export function AssignPublishSection({
     try {
       const payload =
         assignmentType === "EMPLOYEE"
-          ? { assignment_type: assignmentType, employee_id: targetId }
+          ? { assignment_type: assignmentType, employee_id: targetId, required: newAssignmentRequired }
           : assignmentType === "DEPARTMENT"
-            ? { assignment_type: assignmentType, department_id: targetId }
-            : { assignment_type: assignmentType, role_id: targetId };
+            ? { assignment_type: assignmentType, department_id: targetId, required: newAssignmentRequired }
+            : { assignment_type: assignmentType, role_id: targetId, required: newAssignmentRequired };
       await createQuestAssignment(quest.id, payload);
       setTargetId("");
+      setNewAssignmentRequired(false);
       await loadAssignments();
       await loadReadiness();
       onChanged();
@@ -93,12 +97,27 @@ export function AssignPublishSection({
 
   const handleToggleActive = async (assignment: QuestAssignment) => {
     try {
-      await updateQuestAssignment(quest.id, assignment.id, !assignment.active);
+      await updateQuestAssignment(quest.id, assignment.id, { active: !assignment.active });
       await loadAssignments();
       await loadReadiness();
       onChanged();
     } catch {
       setError("Couldn't update this assignment.");
+    }
+  };
+
+  const handleToggleRequired = async (assignment: QuestAssignment) => {
+    setRequiredError(null);
+    setTogglingRequiredId(assignment.id);
+    try {
+      await updateQuestAssignment(quest.id, assignment.id, { required: !assignment.required });
+      await loadAssignments();
+      await loadReadiness();
+      onChanged();
+    } catch {
+      setRequiredError("Couldn't update whether this assignment is required.");
+    } finally {
+      setTogglingRequiredId(null);
     }
   };
 
@@ -168,40 +187,68 @@ export function AssignPublishSection({
             {error}
           </p>
         )}
+        {requiredError && (
+          <p role="alert" className="text-sm text-red-600">
+            {requiredError}
+          </p>
+        )}
 
         <ul className="space-y-2">
           {assignments.map((assignment) => (
             <li
               key={assignment.id}
-              className="flex items-center justify-between gap-3 rounded-lg border border-buddy-border px-4 py-3"
+              className="flex flex-col gap-3 rounded-lg border border-buddy-border px-4 py-3"
             >
-              <div className="flex items-center gap-2 text-sm">
-                <Badge tone="info">{assignment.assignment_type}</Badge>
-                <span className="font-medium text-foreground">
-                  {assignment.assignment_type === "EMPLOYEE" &&
-                    employeeName(assignment.employee_id ?? "")}
-                  {assignment.assignment_type === "DEPARTMENT" &&
-                    departmentName(assignment.department_id ?? "")}
-                  {assignment.assignment_type === "ROLE" && roleName(assignment.role_id ?? "")}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-sm">
+                  <Badge tone="info">{assignment.assignment_type}</Badge>
+                  <span className="font-medium text-foreground">
+                    {assignment.assignment_type === "EMPLOYEE" &&
+                      employeeName(assignment.employee_id ?? "")}
+                    {assignment.assignment_type === "DEPARTMENT" &&
+                      departmentName(assignment.department_id ?? "")}
+                    {assignment.assignment_type === "ROLE" && roleName(assignment.role_id ?? "")}
+                  </span>
+                  {!assignment.active && <Badge tone="neutral">inactive</Badge>}
+                  {assignment.required && <Badge tone="coral">required</Badge>}
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleActive(assignment)}
+                    className="text-xs font-medium text-buddy-primary hover:underline"
+                  >
+                    {assignment.active ? "Deactivate" : "Activate"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteAssignment(assignment.id)}
+                    className="text-xs font-medium text-red-600 hover:underline"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+
+              <label
+                htmlFor={`required-${assignment.id}`}
+                className="flex items-start gap-2 rounded-lg border border-buddy-border bg-buddy-surface px-3 py-2 text-sm focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-buddy-primary"
+              >
+                <input
+                  id={`required-${assignment.id}`}
+                  type="checkbox"
+                  checked={assignment.required}
+                  disabled={togglingRequiredId === assignment.id}
+                  onChange={() => handleToggleRequired(assignment)}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--buddy-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                />
+                <span>
+                  <span className="font-medium text-foreground">Required for readiness</span>
+                  <span className="block text-xs text-buddy-muted">
+                    Employees must complete this Quest before Buddy marks them ready to work.
+                  </span>
                 </span>
-                {!assignment.active && <Badge tone="neutral">inactive</Badge>}
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => handleToggleActive(assignment)}
-                  className="text-xs font-medium text-buddy-primary hover:underline"
-                >
-                  {assignment.active ? "Deactivate" : "Activate"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDeleteAssignment(assignment.id)}
-                  className="text-xs font-medium text-red-600 hover:underline"
-                >
-                  Remove
-                </button>
-              </div>
+              </label>
             </li>
           ))}
           {assignments.length === 0 && (
@@ -209,7 +256,8 @@ export function AssignPublishSection({
           )}
         </ul>
 
-        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-buddy-border p-4">
+        <div className="flex flex-col gap-3 rounded-lg border border-buddy-border p-4">
+          <div className="flex flex-wrap items-center gap-3">
           <select
             value={assignmentType}
             onChange={(e) => {
@@ -269,6 +317,26 @@ export function AssignPublishSection({
           <Button variant="secondary" onClick={handleAddAssignment}>
             + Assign
           </Button>
+        </div>
+
+          <label
+            htmlFor="new-assignment-required"
+            className="flex items-start gap-2 self-start rounded-lg border border-buddy-border bg-buddy-surface px-3 py-2 text-sm focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-buddy-primary"
+          >
+            <input
+              id="new-assignment-required"
+              type="checkbox"
+              checked={newAssignmentRequired}
+              onChange={(e) => setNewAssignmentRequired(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--buddy-primary)]"
+            />
+            <span>
+              <span className="font-medium text-foreground">Required for readiness</span>
+              <span className="block text-xs text-buddy-muted">
+                Employees must complete this Quest before Buddy marks them ready to work.
+              </span>
+            </span>
+          </label>
         </div>
       </Card>
 

@@ -165,15 +165,18 @@ def test_required_assignment_can_be_persisted(client, quest, department):
 
 
 def test_existing_assignment_behavior_unchanged(client, quest, department):
-    """The public assignment-creation endpoint doesn't accept `required`
-    at all yet (Phase 8C) — adding the column must not perturb the
-    existing request/response contract."""
+    """Phase 8C: adding the `required` column must not perturb the
+    existing request/response contract for a caller that ignores it
+    entirely — the assignment is still created the same way, and
+    omitting `required` still means "optional" (Phase 8H-3 exposed the
+    column through the API; this test now asserts that exposure's own
+    default, not its prior absence)."""
     res = client.post(
         f"/api/v1/quests/{quest['id']}/assignments",
         json={"assignment_type": "DEPARTMENT", "department_id": department["id"]},
     )
     assert res.status_code == 201, res.text
-    assert "required" not in res.json()
+    assert res.json()["required"] is False
 
     listing = client.get(f"/api/v1/quests/{quest['id']}/assignments")
     assert listing.status_code == 200

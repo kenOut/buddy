@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -31,16 +32,30 @@ def scene_progress(scene: str) -> int:
     return round((SCENES.index(scene) / (len(SCENES) - 1)) * 100)
 
 
-async def get_or_create_session(db: AsyncSession, employee: Employee) -> OnboardingSession:
-    """Read-only for an existing session. Only provisions missions the one
-    time a session is first created — never on a repeated read, so a plain
-    GET can never write mission_assignment rows."""
+async def get_or_create_session(db: AsyncSession, employee: Employee) -> tuple[OnboardingSession, bool]:
+    """Read-only for an existing session in the common case. Only
+    provisions missions the one time a session is first created — never
+    on a repeated read, so a plain GET can never write mission_assignment
+    rows (build_bundle below relies on this).
+
+    Returns `(session, created)`. The `created` flag exists for
+    provisioning_service's reporting — it is not a correctness signal
+    anything else here depends on.
+
+    Race-safe as of P2: `uq_onboarding_session_employee` (a real
+    database constraint, not just this function's own SELECT-then-check)
+    means two callers racing to create the first session for the same
+    employee — e.g. eager provisioning called concurrently — can't both
+    succeed. The loser's insert raises IntegrityError; it recovers by
+    re-reading the winner's row rather than raising, so callers never
+    have to handle this race themselves.
+    """
     result = await db.execute(
         select(OnboardingSession).where(OnboardingSession.employee_id == employee.id)
     )
     session = result.scalars().first()
     if session:
-        return session
+        return session, False
 
     session = OnboardingSession(
         employee_id=employee.id,
@@ -50,7 +65,17 @@ async def get_or_create_session(db: AsyncSession, employee: Employee) -> Onboard
         started_at=datetime.now(timezone.utc),
     )
     db.add(session)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        result = await db.execute(
+            select(OnboardingSession).where(OnboardingSession.employee_id == employee.id)
+        )
+        session = result.scalars().first()
+        if session is None:
+            raise
+        return session, False
     await db.refresh(session)
 
     if employee.department_id:
@@ -58,7 +83,7 @@ async def get_or_create_session(db: AsyncSession, employee: Employee) -> Onboard
             db, employee.id, employee.department_id, session.id
         )
 
-    return session
+    return session, True
 
 
 async def reset_onboarding_progress(db: AsyncSession, employee: Employee) -> OnboardingSession:
@@ -137,7 +162,7 @@ async def build_bundle(db: AsyncSession, employee: Employee) -> dict:
     """Read-only: assembles the bundle from existing rows. Mission
     provisioning happens once, in get_or_create_session, never here — so
     repeated calls (e.g. GET /onboarding/bundle/{id}) never write."""
-    session = await get_or_create_session(db, employee)
+    session, _created = await get_or_create_session(db, employee)
 
     organization = await organization_service.get_organization(db, employee.organization_id)
     department = await department_service.get_department(db, employee.department_id) if employee.department_id else None
@@ -168,18 +193,3 @@ async def build_bundle(db: AsyncSession, employee: Employee) -> dict:
         "mission_assignments": mission_assignments,
         "assessment_questions": ASSESSMENT_QUESTIONS,
     }
-
-
-async def get_bundle_by_session_token(db: AsyncSession, session_token: str) -> dict | None:
-    """Resolves a bundle from an onboarding_session id used as an opaque
-    access token, instead of a guessable/enumerable identifier like email.
-    The natural target for a future personalized onboarding link."""
-    session = await get_session(db, session_token)
-    if session is None:
-        return None
-
-    employee = await employee_service.get_employee(db, session.employee_id)
-    if employee is None:
-        return None
-
-    return await build_bundle(db, employee)

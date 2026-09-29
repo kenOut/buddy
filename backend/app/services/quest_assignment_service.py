@@ -88,6 +88,30 @@ class EligibilityResult:
     matching_assignment_types: list[str]
 
 
+def _assignment_matches_employee(assignment: QuestAssignment, employee: Employee) -> str | None:
+    """The single predicate for "does this assignment cover this
+    employee" — shared by get_matching_assignment_types (per-quest) and
+    list_eligible_quest_ids_for_employee (Phase 8H-4, across every
+    active assignment at once), so there is exactly one place this
+    matching rule lives rather than two independently-maintained
+    copies. Returns the matched assignment_type, or None."""
+    if assignment.assignment_type == "EMPLOYEE" and assignment.employee_id == employee.id:
+        return "EMPLOYEE"
+    if (
+        assignment.assignment_type == "DEPARTMENT"
+        and employee.department_id is not None
+        and assignment.department_id == employee.department_id
+    ):
+        return "DEPARTMENT"
+    if (
+        assignment.assignment_type == "ROLE"
+        and employee.role_id is not None
+        and assignment.role_id == employee.role_id
+    ):
+        return "ROLE"
+    return None
+
+
 async def get_matching_assignment_types(
     db: AsyncSession, quest_id: str, employee: Employee
 ) -> list[str]:
@@ -98,23 +122,8 @@ async def get_matching_assignment_types(
     )
     result = await db.execute(stmt)
 
-    matched: set[str] = set()
-    for assignment in result.scalars().all():
-        if assignment.assignment_type == "EMPLOYEE" and assignment.employee_id == employee.id:
-            matched.add("EMPLOYEE")
-        elif (
-            assignment.assignment_type == "DEPARTMENT"
-            and employee.department_id is not None
-            and assignment.department_id == employee.department_id
-        ):
-            matched.add("DEPARTMENT")
-        elif (
-            assignment.assignment_type == "ROLE"
-            and employee.role_id is not None
-            and assignment.role_id == employee.role_id
-        ):
-            matched.add("ROLE")
-
+    matched = {_assignment_matches_employee(a, employee) for a in result.scalars().all()}
+    matched.discard(None)
     return sorted(matched)
 
 
@@ -123,3 +132,26 @@ async def is_employee_eligible(db: AsyncSession, quest: Quest, employee: Employe
         return EligibilityResult(eligible=False, matching_assignment_types=[])
     matched = await get_matching_assignment_types(db, quest.id, employee)
     return EligibilityResult(eligible=bool(matched), matching_assignment_types=matched)
+
+
+async def list_eligible_quest_ids_for_employee(db: AsyncSession, employee: Employee) -> set[str]:
+    """Phase 8H-4 — every PUBLISHED Quest this employee is eligible for
+    (the employee's own Quest list, GET /employees/{id}/quests). Reuses
+    the exact same per-assignment matching rule get_matching_assignment_
+    types already applies one quest at a time (via
+    _assignment_matches_employee) — not a second, independently-invented
+    eligibility definition — just resolved across every active
+    assignment joined to a PUBLISHED Quest in one query instead of
+    looping is_employee_eligible over every Quest in existence."""
+    stmt = (
+        select(QuestAssignment)
+        .join(Quest, Quest.id == QuestAssignment.quest_id)
+        .where(QuestAssignment.active.is_(True), Quest.status == "PUBLISHED")
+    )
+    result = await db.execute(stmt)
+
+    eligible: set[str] = set()
+    for assignment in result.scalars().all():
+        if _assignment_matches_employee(assignment, employee) is not None:
+            eligible.add(assignment.quest_id)
+    return eligible

@@ -7,6 +7,8 @@ pydantic==2.10.4
 pydantic-settings==2.7.1
 python-dotenv==1.0.1
 greenlet==3.1.1
+python-multipart==0.0.20
+alembic==1.14.0
 
 # test-only
 pytest==8.3.4

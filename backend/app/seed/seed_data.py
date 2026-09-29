@@ -5,6 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Department, Employee, Mission, Organization, Project, Role
 
+# pravatar.cc serves a fixed set of ~70 numbered placeholder headshots
+# purpose-built for mock/demo data like this — not photos of real,
+# identifiable people tied to these (also fictional) names. Deterministic
+# per index, so the same seed always renders the same faces.
+def _avatar_url(index: int) -> str:
+    return f"https://i.pravatar.cc/300?img={index}"
+
 # Deterministic (fixed-seed) name/title pools for generating the rest of
 # Engineering's two branches. Ghanaian given/family names, matching the
 # style already established by the hand-written demo employees above
@@ -71,6 +78,7 @@ def _generate_branch_employees(
                     employment_type="full_time",
                     start_date=date(start_year + (i % 2), (i % 12) + 1, (i * 3 % 27) + 1),
                     status="active",
+                    avatar_url=_avatar_url(rng.randint(1, 70)),
                 )
             )
         return people
@@ -140,6 +148,7 @@ async def seed_demo_data(db: AsyncSession) -> None:
         employment_type="full_time",
         start_date=date(2021, 3, 1),
         status="active",
+        avatar_url=_avatar_url(47),
     )
     db.add(sarah)
     await db.flush()
@@ -156,6 +165,7 @@ async def seed_demo_data(db: AsyncSession) -> None:
         employment_type="full_time",
         start_date=date(2021, 8, 15),
         status="active",
+        avatar_url=_avatar_url(12),
     )
     db.add(david)
     await db.flush()
@@ -173,6 +183,7 @@ async def seed_demo_data(db: AsyncSession) -> None:
         employment_type="full_time",
         start_date=date.today(),
         status="onboarding",
+        avatar_url=_avatar_url(33),
     )
     db.add(michael)
 
@@ -190,6 +201,7 @@ async def seed_demo_data(db: AsyncSession) -> None:
             employment_type="full_time",
             start_date=date(2022, 6, 1),
             status="active",
+            avatar_url=_avatar_url(5),
         ),
         Employee(
             organization_id=org.id,
@@ -204,6 +216,7 @@ async def seed_demo_data(db: AsyncSession) -> None:
             employment_type="full_time",
             start_date=date(2023, 1, 10),
             status="active",
+            avatar_url=_avatar_url(15),
         ),
     ]
     db.add_all(teammates)

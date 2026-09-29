@@ -3,9 +3,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.core.admin_auth import require_admin_session
+from app.core.employee_auth import assert_caller_is_employee, get_optional_employee_session
 from app.schemas.ai_evaluation import AIEvaluationResponse
 from app.schemas.quest import (
     EmployeeQuestResponse,
+    EmployeeQuestSummary,
     QuestCreate,
     QuestDetailResponse,
     QuestQualityValidationResponse,
@@ -140,9 +142,15 @@ async def archive_quest(quest_id: str, db: AsyncSession = Depends(get_db)):
 @router.get(
     "/quests/{quest_id}/eligibility/{employee_id}", response_model=QuestEligibilityResponse
 )
-async def get_quest_eligibility(quest_id: str, employee_id: str, db: AsyncSession = Depends(get_db)):
+async def get_quest_eligibility(
+    quest_id: str,
+    employee_id: str,
+    db: AsyncSession = Depends(get_db),
+    session_employee_id: str | None = Depends(get_optional_employee_session),
+):
     """Access-eligibility only — never evaluation criteria or any other
     hidden Quest content (see QuestEligibilityResponse)."""
+    assert_caller_is_employee(employee_id, session_employee_id)
     quest = await quest_service.get_quest(db, quest_id)
     if quest is None:
         raise HTTPException(status_code=404, detail="Quest not found")
@@ -159,7 +167,12 @@ async def get_quest_eligibility(quest_id: str, employee_id: str, db: AsyncSessio
 
 
 @router.get("/quests/{quest_id}/employee", response_model=EmployeeQuestResponse)
-async def get_employee_quest(quest_id: str, employee_id: str, db: AsyncSession = Depends(get_db)):
+async def get_employee_quest(
+    quest_id: str,
+    employee_id: str,
+    db: AsyncSession = Depends(get_db),
+    session_employee_id: str | None = Depends(get_optional_employee_session),
+):
     """The employee-safe Quest Workspace contract (Stage 2's
     EmployeeQuestResponse, wired to a real route for the first time).
     Structurally incapable of returning evaluation criteria — the
@@ -168,6 +181,7 @@ async def get_employee_quest(quest_id: str, employee_id: str, db: AsyncSession =
     independently of the /eligibility endpoint (the frontend calls that
     first for nuanced messaging, but this endpoint stays authoritative on
     its own — it must never trust that the frontend checked first)."""
+    assert_caller_is_employee(employee_id, session_employee_id)
     quest = await quest_service.get_quest(db, quest_id)
     if quest is None:
         raise HTTPException(status_code=404, detail="Quest not found")
@@ -189,8 +203,53 @@ async def get_employee_quest(quest_id: str, employee_id: str, db: AsyncSession =
     return response.model_copy(update={"required_for_readiness": quest_with_content.id in required_ids})
 
 
+@router.get("/employees/{employee_id}/quests", response_model=list[EmployeeQuestSummary])
+async def list_employee_quests(
+    employee_id: str,
+    db: AsyncSession = Depends(get_db),
+    session_employee_id: str | None = Depends(get_optional_employee_session),
+):
+    """Phase 8H-4 — the employee's own Quest list (the previously-missing
+    discovery surface the launch audit flagged: before this, a Quest was
+    only reachable by already knowing its ID). Read-only: builds its
+    answer from three existing, unchanged reads —
+    quest_assignment_service.list_eligible_quest_ids_for_employee (the
+    same matching rule the single-Quest eligibility check already uses),
+    readiness_service.required_eligible_quest_ids (Phase 8H-3, unchanged),
+    and quest_attempt_service.list_attempts_for_employee — and never
+    calls get_or_create_attempt, so merely viewing this list can never
+    create a QuestAttempt row."""
+    assert_caller_is_employee(employee_id, session_employee_id)
+    employee = await employee_service.get_employee(db, employee_id)
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    eligible_ids = await quest_assignment_service.list_eligible_quest_ids_for_employee(db, employee)
+    if not eligible_ids:
+        return []
+
+    quests = await quest_service.list_quests_by_ids(db, eligible_ids)
+    required_ids = await readiness_service.required_eligible_quest_ids(db, employee)
+    attempts = await quest_attempt_service.list_attempts_for_employee(db, employee_id)
+    attempt_status_by_quest = {a.quest_id: a.status for a in attempts}
+
+    return [
+        EmployeeQuestSummary.model_validate(quest).model_copy(
+            update={
+                "required_for_readiness": quest.id in required_ids,
+                "attempt_status": attempt_status_by_quest.get(quest.id),
+            }
+        )
+        for quest in quests
+    ]
+
+
 @router.post("/quest-attempts", response_model=QuestAttemptResponse, status_code=201)
-async def create_quest_attempt(payload: QuestAttemptCreate, db: AsyncSession = Depends(get_db)):
+async def create_quest_attempt(
+    payload: QuestAttemptCreate,
+    db: AsyncSession = Depends(get_db),
+    session_employee_id: str | None = Depends(get_optional_employee_session),
+):
     """Eligibility is now enforced here, not just existence — knowing a
     quest_id is no longer enough to start an attempt on it (Stage 3
     spec §11). A quest that isn't PUBLISHED is a lifecycle problem (409);
@@ -198,6 +257,7 @@ async def create_quest_attempt(payload: QuestAttemptCreate, db: AsyncSession = D
     problem (403) — both routed through
     quest_assignment_service.is_employee_eligible, the single
     authoritative eligibility check."""
+    assert_caller_is_employee(payload.employee_id, session_employee_id)
     quest = await quest_service.get_quest(db, payload.quest_id)
     if quest is None:
         raise HTTPException(status_code=404, detail="Quest not found")
@@ -216,13 +276,19 @@ async def create_quest_attempt(payload: QuestAttemptCreate, db: AsyncSession = D
 
 
 @router.get("/quest-attempts/{attempt_id}", response_model=QuestAttemptResponse)
-async def get_quest_attempt(attempt_id: str, employee_id: str, db: AsyncSession = Depends(get_db)):
+async def get_quest_attempt(
+    attempt_id: str,
+    employee_id: str,
+    db: AsyncSession = Depends(get_db),
+    session_employee_id: str | None = Depends(get_optional_employee_session),
+):
     """`employee_id` is now required and checked against ownership (Stage
     4 spec §24) — previously this endpoint returned any attempt by id
     with no ownership check at all. This project has no session-based
     auth, so the caller-supplied employee_id is what's compared; the
     important guarantee is that it must match the attempt's own
     employee_id, not that the caller is cryptographically who they claim."""
+    assert_caller_is_employee(employee_id, session_employee_id)
     attempt = await quest_attempt_service.get_attempt_by_id(db, attempt_id)
     if attempt is None:
         raise HTTPException(status_code=404, detail="Quest attempt not found")
@@ -233,10 +299,14 @@ async def get_quest_attempt(attempt_id: str, employee_id: str, db: AsyncSession 
 
 @router.patch("/quest-attempts/{attempt_id}", response_model=QuestAttemptResponse)
 async def update_quest_attempt(
-    attempt_id: str, payload: QuestAttemptUpdate, db: AsyncSession = Depends(get_db)
+    attempt_id: str,
+    payload: QuestAttemptUpdate,
+    db: AsyncSession = Depends(get_db),
+    session_employee_id: str | None = Depends(get_optional_employee_session),
 ):
     """Autosave. Rejects once the attempt is SUBMITTED/COMPLETED (409) —
     a submitted quest must not silently become editable again."""
+    assert_caller_is_employee(payload.employee_id, session_employee_id)
     attempt = await quest_attempt_service.get_attempt_by_id(db, attempt_id)
     if attempt is None:
         raise HTTPException(status_code=404, detail="Quest attempt not found")
@@ -251,12 +321,16 @@ async def update_quest_attempt(
 
 @router.post("/quest-attempts/{attempt_id}/submit", response_model=QuestAttemptResponse)
 async def submit_quest_attempt(
-    attempt_id: str, payload: QuestAttemptSubmit, db: AsyncSession = Depends(get_db)
+    attempt_id: str,
+    payload: QuestAttemptSubmit,
+    db: AsyncSession = Depends(get_db),
+    session_employee_id: str | None = Depends(get_optional_employee_session),
 ):
     """Re-validates the full eligibility chain at submit time, not just
     ownership — eligibility can change between starting and submitting
     (e.g. the quest gets archived, or the assignment is removed) and the
     server must catch that regardless of what the employee already did."""
+    assert_caller_is_employee(payload.employee_id, session_employee_id)
     attempt = await quest_attempt_service.get_attempt_by_id(db, attempt_id)
     if attempt is None:
         raise HTTPException(status_code=404, detail="Quest attempt not found")
@@ -308,7 +382,10 @@ def _build_employee_evaluation_response(attempt, evaluation) -> QuestEvaluationE
     "/quest-attempts/{attempt_id}/evaluation", response_model=QuestEvaluationEmployeeResponse | None
 )
 async def get_quest_attempt_evaluation(
-    attempt_id: str, employee_id: str, db: AsyncSession = Depends(get_db)
+    attempt_id: str,
+    employee_id: str,
+    db: AsyncSession = Depends(get_db),
+    session_employee_id: str | None = Depends(get_optional_employee_session),
 ):
     """Returns null if no evaluation exists yet — either evaluation
     hasn't been triggered, or the quest has no capability mappings at
@@ -316,6 +393,7 @@ async def get_quest_attempt_evaluation(
     Never reveals whether a *different* employee's attempt exists: an
     ownership mismatch and a genuinely missing attempt both surface as
     404/403 the same way any other quest-attempt endpoint does."""
+    assert_caller_is_employee(employee_id, session_employee_id)
     attempt = await quest_attempt_service.get_attempt_by_id(db, attempt_id)
     if attempt is None:
         raise HTTPException(status_code=404, detail="Quest attempt not found")
@@ -332,13 +410,17 @@ async def get_quest_attempt_evaluation(
     "/quest-attempts/{attempt_id}/evaluate", response_model=QuestEvaluationEmployeeResponse | None
 )
 async def evaluate_quest_attempt(
-    attempt_id: str, payload: EvaluateQuestAttemptRequest, db: AsyncSession = Depends(get_db)
+    attempt_id: str,
+    payload: EvaluateQuestAttemptRequest,
+    db: AsyncSession = Depends(get_db),
+    session_employee_id: str | None = Depends(get_optional_employee_session),
 ):
     """Runs the full deterministic -> AI -> CapabilityEvidence ->
     CapabilityProfile pipeline (quest_evaluation_service.evaluate_attempt).
     On AI failure the attempt is returned to SUBMITTED — the employee's
     submitted work is never lost, and evaluation can be retried by
     calling this endpoint again."""
+    assert_caller_is_employee(payload.employee_id, session_employee_id)
     attempt = await quest_attempt_service.get_attempt_by_id(db, attempt_id)
     if attempt is None:
         raise HTTPException(status_code=404, detail="Quest attempt not found")

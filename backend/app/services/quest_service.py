@@ -42,6 +42,17 @@ async def get_quest(db: AsyncSession, quest_id: str) -> Quest | None:
     return await db.get(Quest, quest_id)
 
 
+async def list_quests_by_ids(db: AsyncSession, quest_ids: set[str]) -> list[Quest]:
+    """Phase 8H-4 — one bulk fetch for the employee Quest list (no
+    content, unlike get_quest_with_content) instead of N individual
+    db.get calls."""
+    if not quest_ids:
+        return []
+    stmt = select(Quest).where(Quest.id.in_(quest_ids)).order_by(Quest.created_at.desc())
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
 async def get_quest_with_content(db: AsyncSession, quest_id: str) -> Quest | None:
     """Eager-loads every child collection in one query set — used to build
     both QuestDetailResponse (manager/server, includes evaluation

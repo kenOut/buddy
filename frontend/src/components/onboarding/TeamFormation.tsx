@@ -1,6 +1,9 @@
 "use client";
 
+import { useState } from "react";
+
 import { StaggerChildren } from "@/components/animations/StaggerChildren";
+import { resolveAvatarUrl } from "@/lib/api";
 import type { EmployeeSummary } from "@/lib/types";
 
 /** Row sizes from back to front (GK -> DEF -> MID -> FWD) for however
@@ -48,6 +51,51 @@ const TEAM_PALETTE = [
   { chip: "bg-buddy-navy", text: "text-white", dot: "bg-buddy-navy" },
 ];
 
+/**
+ * A real photo when `avatar_url` resolves to one (seeded placeholder
+ * headshots, or an admin-uploaded photo — see the employee detail
+ * page's upload control) — falling back to the same colored-initials
+ * chip as before if there's no avatar yet, or the image fails to load.
+ * `key={url}` resets the failed-load state when the avatar itself
+ * changes (e.g. right after an upload), instead of getting stuck
+ * showing the fallback for the old, now-different URL.
+ */
+function Avatar({
+  person,
+  sizeClassName,
+  textSizeClassName,
+  palette,
+}: {
+  person: EmployeeSummary;
+  sizeClassName: string;
+  textSizeClassName: string;
+  palette: { chip: string; text: string };
+}) {
+  const [failed, setFailed] = useState(false);
+  const url = resolveAvatarUrl(person.avatar_url);
+
+  if (url && !failed) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- external/backend-served photo, not a static build asset.
+      <img
+        key={url}
+        src={url}
+        alt={person.full_name}
+        className={`${sizeClassName} rounded-full object-cover ring-2 ring-white/80 shadow-md`}
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+
+  return (
+    <div
+      className={`flex items-center justify-center rounded-full ${sizeClassName} ${palette.chip} ${palette.text} ${textSizeClassName} font-bold ring-2 ring-white/80 shadow-md`}
+    >
+      {initials(person.full_name)}
+    </div>
+  );
+}
+
 function PlayerChip({
   person,
   number,
@@ -59,22 +107,23 @@ function PlayerChip({
 }) {
   const palette = TEAM_PALETTE[colorIndex % TEAM_PALETTE.length];
   return (
-    <div className="flex flex-col items-center gap-1" title={`${person.full_name} — ${person.job_title ?? ""}`}>
+    <div className="flex flex-col items-center gap-1.5" title={`${person.full_name} — ${person.job_title ?? ""}`}>
       <div className="relative">
-        <div
-          className={`flex h-10 w-10 items-center justify-center rounded-full sm:h-12 sm:w-12 ${palette.chip} ${palette.text} text-xs font-bold ring-2 ring-white/80 shadow-md sm:text-sm`}
-        >
-          {initials(person.full_name)}
-        </div>
-        <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-white text-[9px] font-bold text-buddy-navy shadow">
+        <Avatar
+          person={person}
+          sizeClassName="h-11 w-11 sm:h-16 sm:w-16"
+          textSizeClassName="text-base sm:text-lg"
+          palette={palette}
+        />
+        <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] font-bold text-buddy-navy shadow">
           {number}
         </span>
       </div>
-      <div className="max-w-[80px] rounded-md bg-white/95 px-1.5 py-0.5 text-center shadow-sm sm:max-w-[96px]">
-        <p className="truncate text-[10px] leading-tight font-semibold text-buddy-navy sm:text-[11px]">
+      <div className="max-w-[82px] rounded-md bg-white/95 px-1.5 py-0.5 text-center shadow-sm sm:max-w-[110px]">
+        <p className="truncate text-[11px] leading-tight font-semibold text-buddy-navy sm:text-xs">
           {firstName(person.full_name)}
         </p>
-        <p className="truncate text-[8px] leading-tight text-buddy-muted sm:text-[9px]">
+        <p className="truncate text-[9px] leading-tight text-buddy-muted sm:text-[10px]">
           {person.job_title ?? " "}
         </p>
       </div>
@@ -135,7 +184,7 @@ export function TeamFormation({ peers }: { peers: EmployeeSummary[] }) {
         <div className="absolute inset-2 rounded-xl border border-white/25" aria-hidden="true" />
 
         <StaggerChildren
-          className="relative flex flex-col justify-between gap-5 px-3 py-6 sm:gap-7 sm:px-6 sm:py-8"
+          className="relative flex flex-col justify-between gap-6 px-3 py-7 sm:gap-8 sm:px-6 sm:py-9"
           staggerDelay={0.06}
         >
           {rowMembers.map((members, rowIndex) => (
@@ -176,15 +225,14 @@ export function TeamFormation({ peers }: { peers: EmployeeSummary[] }) {
             {bench.map((person) => (
               <div
                 key={person.id}
-                className="flex items-center gap-2 rounded-full border border-buddy-border bg-background/40 py-1 pr-3 pl-1"
+                className="flex items-center gap-2 rounded-full border border-buddy-border bg-background/40 py-1.5 pr-3 pl-1.5"
               >
-                <div
-                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
-                    TEAM_PALETTE[colorIndexOf(person) % TEAM_PALETTE.length].chip
-                  } ${TEAM_PALETTE[colorIndexOf(person) % TEAM_PALETTE.length].text}`}
-                >
-                  {initials(person.full_name)}
-                </div>
+                <Avatar
+                  person={person}
+                  sizeClassName="h-9 w-9 shrink-0"
+                  textSizeClassName="text-xs"
+                  palette={TEAM_PALETTE[colorIndexOf(person) % TEAM_PALETTE.length]}
+                />
                 <div className="min-w-0">
                   <p className="truncate text-xs font-medium text-foreground">{person.full_name}</p>
                   <p className="truncate text-[10px] text-buddy-muted">{person.job_title}</p>

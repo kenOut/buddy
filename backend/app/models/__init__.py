@@ -5,6 +5,7 @@ from app.models.capability_evidence import EVIDENCE_SOURCES, EVIDENCE_STRENGTHS,
 from app.models.capability_profile import CAPABILITY_LEVELS, CapabilityProfile
 from app.models.department import Department
 from app.models.employee import Employee
+from app.models.employee_invitation import EmployeeInvitation
 from app.models.mission import Mission
 from app.models.mission_assignment import MissionAssignment
 from app.models.mission_attempt import ATTEMPT_STATUSES, MissionAttempt
@@ -28,6 +29,7 @@ __all__ = [
     "Department",
     "Role",
     "Employee",
+    "EmployeeInvitation",
     "Project",
     "Mission",
     "MissionAssignment",

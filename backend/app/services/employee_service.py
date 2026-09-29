@@ -2,7 +2,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Employee
-from app.schemas.employee import EmployeeCreate
 
 
 async def list_employees(db: AsyncSession, department_id: str | None = None) -> list[Employee]:
@@ -33,14 +32,6 @@ async def get_teammates(db: AsyncSession, department_id: str, exclude_employee_i
     return list(result.scalars().all())
 
 
-async def create_employee(db: AsyncSession, payload: EmployeeCreate) -> Employee:
-    employee = Employee(**payload.model_dump())
-    db.add(employee)
-    await db.commit()
-    await db.refresh(employee)
-    return employee
-
-
 async def update_employee_status(db: AsyncSession, employee: Employee, status: str) -> Employee:
     employee.status = status
     await db.commit()
@@ -52,6 +43,13 @@ async def update_employee_department(
     db: AsyncSession, employee: Employee, department_id: str | None
 ) -> Employee:
     employee.department_id = department_id
+    await db.commit()
+    await db.refresh(employee)
+    return employee
+
+
+async def update_employee_avatar(db: AsyncSession, employee: Employee, avatar_url: str) -> Employee:
+    employee.avatar_url = avatar_url
     await db.commit()
     await db.refresh(employee)
     return employee

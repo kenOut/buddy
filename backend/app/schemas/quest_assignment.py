@@ -17,6 +17,13 @@ class QuestAssignmentCreate(ORMBase):
     employee_id: str | None = None
     department_id: str | None = None
     role_id: str | None = None
+    # Phase 8H-3 (launch-audit follow-up): exposes the existing
+    # QuestAssignment.required column through the manager-facing API —
+    # the column, readiness_service's read of it, and required_for_
+    # readiness were all already live; only the write path was missing.
+    # Defaults False so an assignment created without specifying this
+    # stays optional, matching the column's own DB-level default.
+    required: bool = False
 
     @field_validator("assignment_type")
     @classmethod
@@ -47,14 +54,24 @@ class QuestAssignmentCreate(ORMBase):
 
 
 class QuestAssignmentUpdate(ORMBase):
-    """Deliberately minimal: only `active` can be toggled. An
-    assignment's target/type is treated as immutable once created — to
-    reassign, delete and create a new one. This avoids re-deriving the
-    single-target validation for every possible partial combination of
-    (assignment_type, employee_id, department_id, role_id) changing
-    independently."""
+    """Deliberately minimal: `active` and `required` are the only fields
+    a manager can toggle post-creation. An assignment's target/type is
+    treated as immutable once created — to reassign, delete and create a
+    new one. This avoids re-deriving the single-target validation for
+    every possible partial combination of (assignment_type, employee_id,
+    department_id, role_id) changing independently.
+
+    Setting `required` here only ever changes this one row — nothing
+    else reads or writes as a side effect of this call. readiness_service
+    picks the new value up the next time anything asks (it has never
+    cached QuestAssignment.required and still doesn't); no
+    QuestAttempt/CapabilityEvaluation/WorkspaceAccessGrant is touched,
+    and no workspace grant is triggered from here — that only ever
+    happens from readiness_service.check_and_trigger, called after a
+    Quest/Mission completion commits, never from an assignment edit."""
 
     active: bool | None = None
+    required: bool | None = None
 
 
 class QuestAssignmentResponse(ORMBase):
@@ -65,6 +82,7 @@ class QuestAssignmentResponse(ORMBase):
     department_id: str | None
     role_id: str | None
     active: bool
+    required: bool
     created_at: datetime
     updated_at: datetime
 

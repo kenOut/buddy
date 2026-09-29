@@ -132,10 +132,12 @@ export function createQuestAssignment(questId: string, payload: QuestAssignmentI
   return api.post<QuestAssignment>(`/quests/${q(questId)}/assignments`, payload);
 }
 
-export function updateQuestAssignment(questId: string, assignmentId: string, active: boolean) {
-  return api.patch<QuestAssignment>(`/quests/${q(questId)}/assignments/${q(assignmentId)}`, {
-    active,
-  });
+export function updateQuestAssignment(
+  questId: string,
+  assignmentId: string,
+  patch: { active?: boolean; required?: boolean }
+) {
+  return api.patch<QuestAssignment>(`/quests/${q(questId)}/assignments/${q(assignmentId)}`, patch);
 }
 
 export function deleteQuestAssignment(questId: string, assignmentId: string) {

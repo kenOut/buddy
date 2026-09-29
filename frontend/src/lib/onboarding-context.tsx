@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import { SCENES, sceneFromPathname } from "@/lib/scenes";
 import type { MissionAssignment, OnboardingBundle, OnboardingSession, SceneKey } from "@/lib/types";
 
@@ -34,10 +34,21 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
 
   const load = useCallback(async () => {
     try {
-      // The MVP has exactly one demo identity, resolved server-side from
-      // config — no caller-supplied identifier selects whose data comes
-      // back (see backend `GET /onboarding/bundle/demo`).
-      const data = await api.get<OnboardingBundle>("/onboarding/bundle/demo");
+      // P1 — Identity & Invitation Foundation: an employee who has
+      // exchanged a real invitation carries an authenticated session
+      // cookie, and /bundle/me derives their identity from it — never a
+      // client-supplied id (see backend onboarding.py). A caller with no
+      // such session (the existing zero-auth demo environment) gets a
+      // 401 here and falls back to the single hardcoded demo identity,
+      // exactly as before. This is not a client-selected employee id;
+      // it's a fixed fallback for the one pre-existing unauthenticated
+      // path this app has always had.
+      const data = await api.get<OnboardingBundle>("/onboarding/bundle/me").catch((err) => {
+        if (err instanceof ApiError && err.status === 401) {
+          return api.get<OnboardingBundle>("/onboarding/bundle/demo");
+        }
+        throw err;
+      });
       setBundle(data);
       setError(null);
     } catch {

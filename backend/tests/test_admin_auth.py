@@ -82,8 +82,42 @@ def test_quest_assignment_create_requires_login(anon_client):
     assert res.status_code == 401
 
 
+def test_quest_assignment_required_update_requires_login(anon_client):
+    """Phase 8H-3 (launch-audit follow-up): setting `required` goes
+    through the same PATCH endpoint every other assignment edit already
+    does — this proves that stays true for the new field specifically,
+    not just for `active`."""
+    res = anon_client.patch(
+        "/api/v1/quests/nonexistent/assignments/nonexistent", json={"required": True}
+    )
+    assert res.status_code == 401
+
+
 def test_missions_create_requires_login(anon_client):
     res = anon_client.post("/api/v1/missions", json={"title": "t", "mission_type": "task"})
+    assert res.status_code == 401
+
+
+def test_onboarding_bundle_by_employee_id_requires_login(anon_client):
+    """P1 (launch-audit follow-up): this route used to be fully open to
+    any caller who supplied an employee_id — a cross-employee data
+    exposure. See test_employee_invitations.py for the full identity/
+    invitation/session surface this phase adds."""
+    bundle = anon_client.get("/api/v1/onboarding/bundle/demo").json()
+    res = anon_client.get(f"/api/v1/onboarding/bundle/{bundle['employee']['id']}")
+    assert res.status_code == 401
+
+
+def test_invitation_issue_requires_login(anon_client):
+    bundle = anon_client.get("/api/v1/onboarding/bundle/demo").json()
+    res = anon_client.post(f"/api/v1/invitations/employees/{bundle['employee']['id']}/issue")
+    assert res.status_code == 401
+
+
+def test_invitation_resend_requires_login(anon_client):
+    """P3 — Email Provider Foundation."""
+    bundle = anon_client.get("/api/v1/onboarding/bundle/demo").json()
+    res = anon_client.post(f"/api/v1/invitations/employees/{bundle['employee']['id']}/resend")
     assert res.status_code == 401
 
 
@@ -95,6 +129,15 @@ def test_missions_create_requires_login(anon_client):
 def test_onboarding_bundle_never_requires_login(anon_client):
     res = anon_client.get("/api/v1/onboarding/bundle/demo")
     assert res.status_code == 200
+
+
+def test_invitation_exchange_never_requires_login(anon_client):
+    """The employee-facing entry point — there is no session yet at this
+    point in the flow. A 401 here means "bad token", not "please log
+    in" (see test_employee_invitations.py for that distinction)."""
+    res = anon_client.post("/api/v1/invitations/exchange", json={"token": "whatever"})
+    assert res.status_code == 401
+    assert isinstance(res.json()["detail"], dict)
 
 
 def test_capabilities_list_never_requires_login(anon_client):

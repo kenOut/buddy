@@ -94,8 +94,19 @@ def _employee_in(client, org_id, department_id):
 
 
 @pytest.fixture
-def employee(client, org_id, department):
-    return _employee_in(client, org_id, department["id"])
+def make_employee(client, org_id, department):
+    """A factory, not a ready-made employee. P2 — Provisioning Boundary
+    made onboarding-session/mission-assignment creation happen eagerly
+    at employee-creation time rather than lazily on first bundle fetch
+    (see onboarding_service.get_or_create_session) — so a test that
+    wants a Mission included in an employee's assignments must create
+    that Mission BEFORE the employee exists. Call this once the test is
+    ready, not before."""
+
+    def _make():
+        return _employee_in(client, org_id, department["id"])
+
+    return _make
 
 
 def _create_mission(client, department_id, *, title=None, required=True, mission_type="task"):
@@ -115,11 +126,13 @@ def _create_mission(client, department_id, *, title=None, required=True, mission
 
 
 def _provision_assignments(client, employee_id):
-    """Fetching the bundle is what provisions mission_assignments for an
-    employee (mission_service.ensure_assignments_for_employee, run once
-    from get_or_create_session) — must happen AFTER any Mission the test
-    wants assigned already exists, mirroring the real app's own
-    "missions are fixed at first session creation" behavior."""
+    """Assignments are provisioned once, eagerly, at employee-creation
+    time (P2 — Provisioning Boundary; previously this happened lazily on
+    an employee's first bundle fetch instead). Fetching the bundle here
+    just reads back whatever was already assigned during creation — it
+    does not provision anything itself. Any Mission a test wants
+    included must exist BEFORE the employee is created — see
+    make_employee."""
     return client.get(f"/api/v1/onboarding/bundle/{employee_id}").json()
 
 
@@ -300,10 +313,11 @@ def _readiness_summary(client, employee_id):
 # =====================================================================
 
 
-def test_zero_required_missions_does_not_block_readiness(client, employee, department, capability_ids):
+def test_zero_required_missions_does_not_block_readiness(client, make_employee, department, capability_ids):
     """No Mission in this department is required at all — the mission
     gate must be vacuously satisfied, not a permanent block. Regression
     guard for every department that never configures one."""
+    employee = make_employee()
     _provision_assignments(client, employee["id"])
     _complete_onboarding(client, employee["id"])
     qid = _build_quest(client, department["id"], capability_ids)
@@ -312,8 +326,9 @@ def test_zero_required_missions_does_not_block_readiness(client, employee, depar
     assert run(_is_ready(employee["id"])) is True
 
 
-def test_required_mission_incomplete_blocks_readiness(client, employee, department, capability_ids):
+def test_required_mission_incomplete_blocks_readiness(client, make_employee, department, capability_ids):
     _create_mission(client, department["id"], title=f"Required Mission {next(_mission_counter)}")
+    employee = make_employee()
     _complete_onboarding(client, employee["id"])
     qid = _build_quest(client, department["id"], capability_ids)
     _complete_required_quest(client, qid, employee["id"], department["id"], capability_ids)
@@ -323,9 +338,10 @@ def test_required_mission_incomplete_blocks_readiness(client, employee, departme
 
 
 def test_completing_the_required_reflection_mission_reaches_readiness(
-    client, employee, department, capability_ids
+    client, make_employee, department, capability_ids
 ):
     mission = _create_mission(client, department["id"], title=f"Required Mission {next(_mission_counter)}")
+    employee = make_employee()
     _complete_onboarding(client, employee["id"])
     qid = _build_quest(client, department["id"], capability_ids)
     _complete_required_quest(client, qid, employee["id"], department["id"], capability_ids)
@@ -335,11 +351,12 @@ def test_completing_the_required_reflection_mission_reaches_readiness(
     assert run(_is_ready(employee["id"])) is True
 
 
-def test_optional_mission_completion_is_irrelevant_to_readiness(client, employee, department, capability_ids):
+def test_optional_mission_completion_is_irrelevant_to_readiness(client, make_employee, department, capability_ids):
     """A non-required Mission left incomplete must never block readiness
     — only Mission.required=True missions are part of the gate."""
     optional_title = f"Optional Mission {next(_mission_counter)}"
     _create_mission(client, department["id"], title=optional_title, required=False)
+    employee = make_employee()
     _complete_onboarding(client, employee["id"])
     qid = _build_quest(client, department["id"], capability_ids)
     _complete_required_quest(client, qid, employee["id"], department["id"], capability_ids)
@@ -368,8 +385,9 @@ def test_required_mission_scoped_to_its_own_department(client, org_id, departmen
     assert run(_is_ready(other_employee["id"])) is True
 
 
-def test_investigation_mission_completion_reaches_readiness(client, employee, department, capability_ids):
+def test_investigation_mission_completion_reaches_readiness(client, make_employee, department, capability_ids):
     mission = _create_mission(client, department["id"], title=INVESTIGATION_TITLE)
+    employee = make_employee()
     _complete_onboarding(client, employee["id"])
     qid = _build_quest(client, department["id"], capability_ids)
     _complete_required_quest(client, qid, employee["id"], department["id"], capability_ids)
@@ -379,11 +397,12 @@ def test_investigation_mission_completion_reaches_readiness(client, employee, de
     assert run(_is_ready(employee["id"])) is True
 
 
-def test_failed_investigation_attempt_does_not_satisfy_the_mission_gate(client, employee, department):
+def test_failed_investigation_attempt_does_not_satisfy_the_mission_gate(client, make_employee, department):
     """A submitted-but-failed attempt must not count as completing the
     required mission — mirrors mission_attempt_service.submit_attempt
     only flipping the assignment to completed when result.passed."""
     mission = _create_mission(client, department["id"], title=INVESTIGATION_TITLE)
+    employee = make_employee()
     _provision_assignments(client, employee["id"])
 
     attempt = client.post(
@@ -414,8 +433,9 @@ def test_failed_investigation_attempt_does_not_satisfy_the_mission_gate(client, 
 # =====================================================================
 
 
-def test_readiness_summary_reports_mission_counts(client, employee, department, capability_ids):
+def test_readiness_summary_reports_mission_counts(client, make_employee, department, capability_ids):
     mission = _create_mission(client, department["id"], title=f"Required Mission {next(_mission_counter)}")
+    employee = make_employee()
     _complete_onboarding(client, employee["id"])
     qid = _build_quest(client, department["id"], capability_ids)
     _complete_required_quest(client, qid, employee["id"], department["id"], capability_ids)
@@ -441,9 +461,12 @@ def test_readiness_summary_reports_mission_counts(client, employee, department, 
 # =====================================================================
 
 
-def test_completing_the_required_mission_triggers_workspace_grant(client, employee, department, capability_ids):
+def test_completing_the_required_mission_triggers_workspace_grant(
+    client, make_employee, department, capability_ids
+):
     integration = run(_create_integration(department["id"]))
     mission = _create_mission(client, department["id"], title=f"Required Mission {next(_mission_counter)}")
+    employee = make_employee()
     _complete_onboarding(client, employee["id"])
     qid = _build_quest(client, department["id"], capability_ids)
     _complete_required_quest(client, qid, employee["id"], department["id"], capability_ids)
@@ -458,10 +481,11 @@ def test_completing_the_required_mission_triggers_workspace_grant(client, employ
 
 
 def test_completing_the_required_investigation_mission_triggers_workspace_grant(
-    client, employee, department, capability_ids
+    client, make_employee, department, capability_ids
 ):
     integration = run(_create_integration(department["id"]))
     mission = _create_mission(client, department["id"], title=INVESTIGATION_TITLE)
+    employee = make_employee()
     _complete_onboarding(client, employee["id"])
     qid = _build_quest(client, department["id"], capability_ids)
     _complete_required_quest(client, qid, employee["id"], department["id"], capability_ids)

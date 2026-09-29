@@ -3,8 +3,7 @@
 - GET /onboarding/bundle/* never writes and never duplicates mission
   assignments (fix #5).
 - Employee PII can no longer be retrieved via an arbitrary email lookup
-  (fix #6), replaced by a server-config-driven demo bootstrap and an
-  opaque session-token lookup.
+  (fix #6), replaced by a server-config-driven demo bootstrap.
 
 Runs against an isolated SQLite file (deleted and recreated each run) so it
 never touches the dev database.
@@ -73,21 +72,6 @@ def test_employee_by_email_route_is_removed(client):
 
 def test_onboarding_bundle_by_email_route_is_removed(client):
     res = client.get("/api/v1/onboarding/bundle/by-email/michael.mensah@buddy.dev")
-    assert res.status_code == 404
-
-
-def test_bundle_by_token_resolves_the_owning_employee(client):
-    demo = client.get("/api/v1/onboarding/bundle/demo").json()
-    session_token = demo["session"]["id"]
-
-    res = client.get(f"/api/v1/onboarding/bundle/by-token/{session_token}")
-
-    assert res.status_code == 200
-    assert res.json()["employee"]["email"] == demo["employee"]["email"]
-
-
-def test_bundle_by_unknown_token_is_not_found(client):
-    res = client.get("/api/v1/onboarding/bundle/by-token/does-not-exist")
     assert res.status_code == 404
 
 

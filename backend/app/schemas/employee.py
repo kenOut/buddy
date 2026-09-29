@@ -17,6 +17,11 @@ class EmployeeCreate(ORMBase):
     start_date: date | None = None
     avatar_url: str | None = None
     status: str = "invited"
+    # P1 — Identity & Invitation Foundation. Nullable: most employees
+    # created today (demo seed, admin UI) have no external identity
+    # provider yet. Never use email as this key.
+    identity_provider: str | None = None
+    external_subject: str | None = None
 
 
 class EmployeeSummary(ORMBase):
@@ -45,6 +50,8 @@ class EmployeeRead(ORMBase):
     start_date: date | None
     avatar_url: str | None
     status: str
+    identity_provider: str | None
+    external_subject: str | None
     created_at: datetime
     updated_at: datetime
 

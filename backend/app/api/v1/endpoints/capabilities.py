@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.core.employee_auth import assert_caller_is_employee, get_optional_employee_session
 from app.schemas.capability import CapabilityRead
 from app.schemas.capability_evaluation import CapabilityEvaluationRead, EvaluateMissionAttemptRequest
 from app.schemas.capability_evidence import CapabilityEvidenceRead
@@ -40,7 +41,12 @@ async def list_capabilities(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/employees/{employee_id}/capabilities", response_model=list[CapabilityProfileRead])
-async def get_employee_capabilities(employee_id: str, db: AsyncSession = Depends(get_db)):
+async def get_employee_capabilities(
+    employee_id: str,
+    db: AsyncSession = Depends(get_db),
+    session_employee_id: str | None = Depends(get_optional_employee_session),
+):
+    assert_caller_is_employee(employee_id, session_employee_id)
     employee = await employee_service.get_employee(db, employee_id)
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -51,8 +57,12 @@ async def get_employee_capabilities(employee_id: str, db: AsyncSession = Depends
     "/employees/{employee_id}/capabilities/evidence", response_model=list[CapabilityEvidenceRead]
 )
 async def get_employee_capability_evidence(
-    employee_id: str, capability_id: str | None = None, db: AsyncSession = Depends(get_db)
+    employee_id: str,
+    capability_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    session_employee_id: str | None = Depends(get_optional_employee_session),
 ):
+    assert_caller_is_employee(employee_id, session_employee_id)
     employee = await employee_service.get_employee(db, employee_id)
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -73,16 +83,24 @@ async def _get_owned_attempt(db: AsyncSession, attempt_id: str, employee_id: str
 
 @router.get("/mission-attempts/{attempt_id}/evaluation", response_model=CapabilityEvaluationRead | None)
 async def get_mission_attempt_evaluation(
-    attempt_id: str, employee_id: str, db: AsyncSession = Depends(get_db)
+    attempt_id: str,
+    employee_id: str,
+    db: AsyncSession = Depends(get_db),
+    session_employee_id: str | None = Depends(get_optional_employee_session),
 ):
+    assert_caller_is_employee(employee_id, session_employee_id)
     await _get_owned_attempt(db, attempt_id, employee_id)
     return await ai_evaluation_service.get_evaluation_for_attempt(db, attempt_id)
 
 
 @router.post("/mission-attempts/{attempt_id}/evaluate", response_model=CapabilityEvaluationRead)
 async def evaluate_mission_attempt(
-    attempt_id: str, payload: EvaluateMissionAttemptRequest, db: AsyncSession = Depends(get_db)
+    attempt_id: str,
+    payload: EvaluateMissionAttemptRequest,
+    db: AsyncSession = Depends(get_db),
+    session_employee_id: str | None = Depends(get_optional_employee_session),
 ):
+    assert_caller_is_employee(payload.employee_id, session_employee_id)
     attempt = await _get_owned_attempt(db, attempt_id, payload.employee_id)
     if attempt.status != "completed":
         raise HTTPException(
@@ -115,7 +133,12 @@ async def evaluate_mission_attempt(
 
 
 @router.get("/employees/{employee_id}/next-mission", response_model=NextMissionResponse)
-async def get_next_mission(employee_id: str, db: AsyncSession = Depends(get_db)):
+async def get_next_mission(
+    employee_id: str,
+    db: AsyncSession = Depends(get_db),
+    session_employee_id: str | None = Depends(get_optional_employee_session),
+):
+    assert_caller_is_employee(employee_id, session_employee_id)
     employee = await employee_service.get_employee(db, employee_id)
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -139,7 +162,11 @@ def _gap_items(items) -> list[dict]:
 
 
 @router.get("/employees/{employee_id}/next-quest", response_model=NextQuestResponse)
-async def get_next_quest(employee_id: str, db: AsyncSession = Depends(get_db)):
+async def get_next_quest(
+    employee_id: str,
+    db: AsyncSession = Depends(get_db),
+    session_employee_id: str | None = Depends(get_optional_employee_session),
+):
     """Phase 6C's deterministic adaptive ranking (quest_recommendation.py,
     unchanged) wrapped by Phase 6D's persistence layer
     (recommendation_persistence.py): repeated calls with unchanged
@@ -151,6 +178,7 @@ async def get_next_quest(employee_id: str, db: AsyncSession = Depends(get_db)):
     itself uses — so there is no code path here that could leak
     expected_answer/expected_behavior/reference_solution/evaluation
     criteria internals."""
+    assert_caller_is_employee(employee_id, session_employee_id)
     employee = await employee_service.get_employee(db, employee_id)
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -193,7 +221,11 @@ async def get_next_quest(employee_id: str, db: AsyncSession = Depends(get_db)):
 @router.get(
     "/employees/{employee_id}/development-journey", response_model=DevelopmentJourneyResponse
 )
-async def get_development_journey(employee_id: str, db: AsyncSession = Depends(get_db)):
+async def get_development_journey(
+    employee_id: str,
+    db: AsyncSession = Depends(get_db),
+    session_employee_id: str | None = Depends(get_optional_employee_session),
+):
     """Phase 6D — a deterministic, chronologically-ordered, employee-safe
     read model composed from four existing authoritative sources
     (OnboardingSession, completed QuestAttempts, CapabilityEvidence, and
@@ -203,6 +235,7 @@ async def get_development_journey(employee_id: str, db: AsyncSession = Depends(g
     expected_answer/expected_behavior/reference_solution, raw AI
     responses, or any other evaluator-only field — those models are
     never read by this endpoint's call chain at all."""
+    assert_caller_is_employee(employee_id, session_employee_id)
     employee = await employee_service.get_employee(db, employee_id)
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -210,13 +243,18 @@ async def get_development_journey(employee_id: str, db: AsyncSession = Depends(g
 
 
 @router.get("/employees/{employee_id}/workspace-access", response_model=EmployeeWorkspaceAccess)
-async def get_employee_workspace_access(employee_id: str, db: AsyncSession = Depends(get_db)):
+async def get_employee_workspace_access(
+    employee_id: str,
+    db: AsyncSession = Depends(get_db),
+    session_employee_id: str | None = Depends(get_optional_employee_session),
+):
     """Phase 8E — the employee-safe read of their department workspace's
     access state. Deliberately never triggers anything (no readiness
     check, no provider call, no grant creation) — it only reports what
     already exists. See workspace_access_service.get_employee_access and
     schemas/workspace_access.py's EmployeeWorkspaceAccess/
     WORKSPACE_ACCESS_API_STATUSES for the full status contract."""
+    assert_caller_is_employee(employee_id, session_employee_id)
     employee = await employee_service.get_employee(db, employee_id)
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -224,12 +262,17 @@ async def get_employee_workspace_access(employee_id: str, db: AsyncSession = Dep
 
 
 @router.get("/employees/{employee_id}/readiness-summary", response_model=EmployeeReadinessSummary)
-async def get_employee_readiness_summary(employee_id: str, db: AsyncSession = Depends(get_db)):
+async def get_employee_readiness_summary(
+    employee_id: str,
+    db: AsyncSession = Depends(get_db),
+    session_employee_id: str | None = Depends(get_optional_employee_session),
+):
     """Phase 8H-1 — the employee-safe readiness read model. Always
     derived fresh from current OnboardingSession/QuestAssignment/
     QuestAttempt state; never triggers anything (no workspace-access
     call, no side effects) and never stores anything. See
     readiness_service.get_readiness_summary for the full contract."""
+    assert_caller_is_employee(employee_id, session_employee_id)
     employee = await employee_service.get_employee(db, employee_id)
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee not found")

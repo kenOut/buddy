@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
 import { getReadinessSummary } from "@/lib/capabilities";
 import { useOnboarding } from "@/lib/onboarding-context";
@@ -28,6 +29,18 @@ import type { EmployeeReadinessSummary } from "@/lib/types";
  * (readiness_service.py) — this pill reports the combined total rather
  * than Quests alone, naming whichever kind(s) are actually in play so
  * the copy doesn't lie by omission when only one kind is configured.
+ *
+ * Refetches on pathname change, not just on mount (small fix, pre-demo
+ * freeze): this component is mounted once in OnboardingChrome and never
+ * unmounts across onboarding navigation, so `bundle` alone isn't a
+ * reliable "the employee did something that could have changed
+ * readiness" signal — completing a Quest goes through lib/quests.ts
+ * entirely, which never touches the onboarding bundle/context. Quest
+ * and Mission completion both always end with a navigation (back to a
+ * Quest/Mission list, to the Journey, forward through the next scene),
+ * so the route changing is the actual, existing signal that "the
+ * employee has returned to an onboarding surface" — not a fixed timer,
+ * not polling.
  */
 function requiredNoun(summary: EmployeeReadinessSummary): string {
   const hasQuests = summary.required_quest_count > 0;
@@ -39,6 +52,7 @@ function requiredNoun(summary: EmployeeReadinessSummary): string {
 
 export function ReadinessStatus() {
   const { bundle } = useOnboarding();
+  const pathname = usePathname();
   const [summary, setSummary] = useState<EmployeeReadinessSummary | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -49,6 +63,10 @@ export function ReadinessStatus() {
       .then((result) => {
         if (cancelled) return;
         setSummary(result);
+        // A fresh fetch on this navigation succeeded — clear any earlier
+        // failure so the pill can recover on its own instead of staying
+        // hidden forever after one transient error.
+        setFailed(false);
       })
       .catch(() => {
         if (cancelled) return;
@@ -57,7 +75,7 @@ export function ReadinessStatus() {
     return () => {
       cancelled = true;
     };
-  }, [bundle]);
+  }, [bundle, pathname]);
 
   const totalRequired = summary ? summary.required_quest_count + summary.required_mission_count : 0;
   const totalCompleted = summary

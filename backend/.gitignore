@@ -4,3 +4,7 @@ __pycache__/
 *.db
 .env
 .pytest_cache/
+
+# User-uploaded avatar files — not source, keep the directory via .gitkeep
+app/static/avatars/*
+!app/static/avatars/.gitkeep

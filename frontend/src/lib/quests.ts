@@ -1,10 +1,21 @@
 import { api } from "@/lib/api";
-import type { EmployeeQuest, QuestAttempt, QuestEligibility, QuestEvaluationResult } from "@/lib/types";
+import type {
+  EmployeeQuest,
+  EmployeeQuestSummary,
+  QuestAttempt,
+  QuestEligibility,
+  QuestEvaluationResult,
+} from "@/lib/types";
 
 export function getQuestEligibility(questId: string, employeeId: string) {
   return api.get<QuestEligibility>(
     `/quests/${encodeURIComponent(questId)}/eligibility/${encodeURIComponent(employeeId)}`
   );
+}
+
+/** Phase 8H-4 — the employee's own Quest discovery list. */
+export function getEmployeeQuests(employeeId: string) {
+  return api.get<EmployeeQuestSummary[]>(`/employees/${encodeURIComponent(employeeId)}/quests`);
 }
 
 export function getEmployeeQuest(questId: string, employeeId: string) {

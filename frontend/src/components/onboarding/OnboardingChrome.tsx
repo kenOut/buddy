@@ -40,9 +40,17 @@ export function OnboardingChrome({ children }: { children: React.ReactNode }) {
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-6 px-4 py-6 sm:gap-8 sm:px-8 sm:py-10">
       <header className="flex flex-wrap items-center justify-between gap-2">
-        <Link href="/" className="font-heading text-sm font-semibold tracking-tight text-buddy-navy">
-          Buddy
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link href="/" className="font-heading text-sm font-semibold tracking-tight text-buddy-navy">
+            Buddy
+          </Link>
+          <Link
+            href="/onboarding/quests"
+            className="text-sm font-medium text-buddy-muted hover:text-buddy-primary"
+          >
+            Your Quests
+          </Link>
+        </div>
         <div className="flex items-center gap-3">
           <ReadinessStatus />
           <span className="text-xs text-buddy-muted">{bundle.organization.name}</span>

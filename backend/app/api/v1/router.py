@@ -6,11 +6,13 @@ from app.api.v1.endpoints import (
     capabilities,
     departments,
     employees,
+    invitations,
     mission_attempts,
     missions,
     onboarding,
     organizations,
     projects,
+    provisioning,
     quest_assignments,
     quest_capabilities,
     quest_evaluation_criteria,
@@ -39,6 +41,15 @@ api_router.include_router(projects.router, dependencies=_admin_only)
 api_router.include_router(missions.router, dependencies=_admin_only)
 api_router.include_router(mission_attempts.router)
 api_router.include_router(onboarding.router)
+# Mixed router, like quests.router below — issuing an invitation is
+# admin-gated per-route inside invitations.py itself; exchanging one is
+# the employee-facing entry point and must stay open.
+api_router.include_router(invitations.router)
+# A third, distinct trust boundary from both _admin_only above and the
+# employee session — gated by its own provisioning credential entirely
+# inside provisioning.py (core/provisioning_auth.py), never the admin
+# cookie. See provisioning_service's module docstring.
+api_router.include_router(provisioning.router)
 api_router.include_router(admin.router)
 api_router.include_router(capabilities.router)
 api_router.include_router(quests.router)
