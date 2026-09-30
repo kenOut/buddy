@@ -1,10 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 
 import { BuddyIllustration } from "@/components/buddy/BuddyIllustration";
 import { BuddySpeech } from "@/components/buddy/BuddySpeech";
 import { SceneNav } from "@/components/onboarding/SceneNav";
+import { resolveAvatarUrl } from "@/lib/api";
 import { useOnboarding } from "@/lib/onboarding-context";
 import type { EmployeeSummary } from "@/lib/types";
 
@@ -23,6 +25,41 @@ interface ChainNode {
   subtitle?: string;
   initials: string;
   accent: string;
+  avatarUrl?: string | null;
+}
+
+/**
+ * A real photo when `avatarUrl` resolves to one — falling back to the
+ * same colored-initials chip as before if there's none, or the image
+ * fails to load. `key={url}` resets the failed-load state when the
+ * avatar itself changes (e.g. right after an upload), matching the
+ * same pattern TeamFormation's Avatar already uses.
+ */
+function NodeAvatar({ node }: { node: ChainNode }) {
+  const [failed, setFailed] = useState(false);
+  const url = resolveAvatarUrl(node.avatarUrl);
+
+  if (url && !failed) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- external/backend-served photo, not a static build asset.
+      <img
+        key={url}
+        src={url}
+        alt={node.title}
+        className="h-11 w-11 shrink-0 rounded-full object-cover"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+
+  return (
+    <div
+      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white"
+      style={{ backgroundColor: node.accent }}
+    >
+      {node.initials}
+    </div>
+  );
 }
 
 function Connector({ delay }: { delay: number }) {
@@ -47,12 +84,7 @@ function ChainCard({ node, delay }: { node: ChainNode; delay: number }) {
       transition={{ duration: reduceMotion ? 0.01 : 0.4, delay: reduceMotion ? 0 : delay, ease: "easeOut" }}
       className="mx-auto flex w-full max-w-sm items-center gap-3 rounded-xl border border-buddy-border bg-buddy-surface p-4 shadow-sm"
     >
-      <div
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white"
-        style={{ backgroundColor: node.accent }}
-      >
-        {node.initials}
-      </div>
+      <NodeAvatar node={node} />
       <div className="min-w-0 text-left">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-buddy-muted">
           {node.label}
@@ -91,6 +123,7 @@ export function ReportingScene() {
       subtitle: employee.job_title ?? undefined,
       initials: initials(employee.full_name),
       accent: "var(--buddy-cyan)",
+      avatarUrl: employee.avatar_url,
     },
   ];
 
@@ -131,5 +164,6 @@ function personNode(label: string, person: EmployeeSummary, accent: string): Cha
     subtitle: person.job_title ?? undefined,
     initials: initials(person.full_name),
     accent,
+    avatarUrl: person.avatar_url,
   };
 }

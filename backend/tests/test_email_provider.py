@@ -140,3 +140,21 @@ def test_unimplemented_real_provider_cannot_silently_fall_back_to_mock():
 
 def test_email_provider_types_lists_only_implemented_providers():
     assert EMAIL_PROVIDER_TYPES == ["mock", "smtp"]
+
+
+def test_automated_suite_can_never_run_with_a_real_email_provider():
+    """The incident this pins down: a developer's local backend/.env
+    can legitimately have EMAIL_PROVIDER=smtp (and real SMTP
+    credentials) set for the manual/integration Gmail delivery test
+    (README.md's "Email delivery" section) — pydantic-settings loads
+    that file, and once, before conftest.py's safety net existed, that
+    silently made the ENTIRE automated suite attempt real SMTP sends to
+    synthetic @kowri.test addresses during a routine `pytest -q` run.
+    tests/conftest.py now forces EMAIL_PROVIDER=mock in os.environ
+    before any test module is even imported, which real environment
+    variables always take priority over .env file values for — this
+    just asserts that guarantee holds from inside a real test, not only
+    by manual verification."""
+    from app.core.config import get_settings
+
+    assert get_settings().email_provider == "mock"

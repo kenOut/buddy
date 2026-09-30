@@ -21,6 +21,14 @@ class AdminOverview(ORMBase):
 
 
 class AdminLoginRequest(ORMBase):
+    """`email` is optional and backward compatible: omitted (or blank),
+    this is the original shared-password login (check_admin_password);
+    supplied, this authenticates as that specific AdminUser stakeholder
+    account instead (see admin.py's admin_login and
+    admin_user_service.authenticate_admin_user). Both paths issue the
+    exact same session cookie/permissions."""
+
+    email: str | None = None
     password: str
 
 

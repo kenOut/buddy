@@ -6,7 +6,29 @@ from sqlalchemy.orm import selectinload
 
 from app.models import Mission, MissionAssignment
 from app.schemas.mission import MissionCreate, MissionUpdate
-from app.services import readiness_service
+from app.services import mission_quizzes, mission_scenarios, readiness_service
+
+
+class MissingWorkspaceContentError(Exception):
+    """Raised when a quiz/investigation Mission's title has no matching
+    entry in mission_quizzes.py/mission_scenarios.py — those workspace
+    types are static, server-side-only content keyed by exact title
+    string (see either module's own docstring for why: seeded mission
+    ids aren't stable across reseeds). Letting a mismatched title
+    through would create a Mission that 404s for every employee who
+    opens it — caught here instead, at creation/update time, not
+    discovered later by an employee."""
+
+
+def _assert_workspace_content_exists(workspace_type: str, title: str) -> None:
+    if workspace_type == "quiz" and title not in mission_quizzes.MISSION_QUIZZES:
+        raise MissingWorkspaceContentError(
+            f'No quiz content exists for the title "{title}" in mission_quizzes.py.'
+        )
+    if workspace_type == "investigation" and title not in mission_scenarios.MISSION_SCENARIOS:
+        raise MissingWorkspaceContentError(
+            f'No investigation scenario exists for the title "{title}" in mission_scenarios.py.'
+        )
 
 
 async def list_missions(db: AsyncSession, department_id: str | None = None) -> list[Mission]:
@@ -22,6 +44,7 @@ async def get_mission(db: AsyncSession, mission_id: str) -> Mission | None:
 
 
 async def create_mission(db: AsyncSession, payload: MissionCreate) -> Mission:
+    _assert_workspace_content_exists(payload.workspace_type, payload.title)
     mission = Mission(**payload.model_dump())
     db.add(mission)
     await db.commit()
@@ -30,7 +53,12 @@ async def create_mission(db: AsyncSession, payload: MissionCreate) -> Mission:
 
 
 async def update_mission(db: AsyncSession, mission: Mission, payload: MissionUpdate) -> Mission:
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    fields = payload.model_dump(exclude_unset=True)
+    workspace_type = fields.get("workspace_type", mission.workspace_type)
+    title = fields.get("title", mission.title)
+    _assert_workspace_content_exists(workspace_type, title)
+
+    for field, value in fields.items():
         setattr(mission, field, value)
     await db.commit()
     await db.refresh(mission)

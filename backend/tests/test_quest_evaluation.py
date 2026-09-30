@@ -23,13 +23,57 @@ from app.core.config import get_settings  # noqa: E402
 
 @pytest.fixture(scope="module")
 def client():
+    # Reassigned here, not just once at module import time — this
+    # suite's own established fragility class (first diagnosed in
+    # P2.1, recurring in P3/P4.1/the Correction phase): every test file
+    # sets DATABASE_URL once at module top-level, but a module-scoped
+    # fixture doesn't actually execute until pytest gets around to its
+    # first test, by which point a later-collected file's own top-level
+    # assignment may have already overwritten it. Reasserting
+    # immediately before TestClient(...) triggers the real lifespan/
+    # seed guarantees this file runs against its own isolated database
+    # regardless of collection order.
+    os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{TEST_DB_PATH}"
     with TestClient(app) as c:
         # Manager Portal auth (the login-gated admin/analytics/quest-builder
         # routers): authenticate this shared client once so every admin-only
         # call in this file works without each test managing its own session.
         c.post("/api/v1/admin/login", json={"password": get_settings().admin_password})
+
+        # seed_data.py no longer seeds any demo Missions (see its own
+        # module docstring) — the regression test near the bottom of
+        # this file needs one real investigation mission assigned to the
+        # demo employee, so create it here, BEFORE that employee's first
+        # bundle fetch (which happens as soon as the demo_bundle fixture
+        # below is first resolved). Mission assignments are only ever
+        # provisioned once, at an employee's first bundle fetch (P2 —
+        # Provisioning Boundary).
+        employees = c.get("/api/v1/employees").json()
+        demo_employee = next(e for e in employees if e["email"] == "nelikem.agbanu@buddy.dev")
+        c.post(
+            "/api/v1/missions",
+            json={
+                "department_id": demo_employee["department_id"],
+                "title": "Diagnose the checkout latency spike",
+                "mission_type": "task",
+                "workspace_type": "investigation",
+                "required": True,
+            },
+        )
+
         yield c
     TEST_DB_PATH.unlink(missing_ok=True)
+
+
+@pytest.fixture(autouse=True)
+def _restore_database_url_after_each_test():
+    """Restore whatever DATABASE_URL was active before this file's
+    tests ran, so as not to leave a stale value for any test collected
+    after this file."""
+    original = os.environ.get("DATABASE_URL")
+    yield
+    if original is not None:
+        os.environ["DATABASE_URL"] = original
 
 
 @pytest.fixture(scope="module")

@@ -10,9 +10,16 @@ from app.schemas.employee import (
     EmployeeRead,
     EmployeeStatusUpdate,
 )
+from app.schemas.manager_performance import ManagerEmployeePerformanceResponse
 from app.schemas.mission import MissionAssignmentRead
 from app.schemas.provisioning import ProvisioningRequest
-from app.services import department_service, employee_service, mission_service, provisioning_service
+from app.services import (
+    department_service,
+    employee_service,
+    manager_performance_service,
+    mission_service,
+    provisioning_service,
+)
 from app.services.provisioning_service import ProvisioningConflictError, UnknownReferenceError
 
 router = APIRouter(prefix="/employees", tags=["employees"])
@@ -151,3 +158,18 @@ async def upload_employee_avatar(
 async def get_employee_missions(employee_id: str, db: AsyncSession = Depends(get_db)):
     assignments = await mission_service.list_assignments_for_employee(db, employee_id)
     return assignments
+
+
+@router.get("/{employee_id}/performance", response_model=ManagerEmployeePerformanceResponse)
+async def get_employee_performance(employee_id: str, db: AsyncSession = Depends(get_db)):
+    """Manager Performance & Readiness Visibility — Stage 1. Admin-only
+    (this whole router is registered with require_admin_session as a
+    router-level dependency in api/v1/router.py — the same boundary
+    /{employee_id}/missions above already uses), deliberately NOT the
+    employee-session mechanism capabilities.py's endpoints use — see
+    manager_performance_service's own module docstring for why that
+    distinction matters for this specific endpoint."""
+    employee = await employee_service.get_employee(db, employee_id)
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    return await manager_performance_service.get_employee_performance(db, employee)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -11,8 +11,8 @@ const MISSION_TYPES: MissionType[] = ["task", "reading", "setup", "meeting", "tr
 
 const WORKSPACE_TYPES: { value: MissionWorkspaceType; label: string }[] = [
   { value: "reflection", label: "Reflection (freeform, works for any mission)" },
-  { value: "quiz", label: "Quiz (needs questions added in code first)" },
-  { value: "investigation", label: "Investigation (needs a scenario added in code first)" },
+  { value: "quiz", label: "Quiz (pick from titles with content already written)" },
+  { value: "investigation", label: "Investigation (pick from titles with a scenario already written)" },
 ];
 
 export function NewMissionModal({
@@ -33,6 +33,33 @@ export function NewMissionModal({
   const [required, setRequired] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Quiz/investigation content is static, server-side code keyed by
+  // exact mission title (see missions.py's own docstring on this
+  // endpoint) — picking from titles real content already exists for,
+  // instead of typing one free-hand, makes a 404-on-open mission
+  // impossible to create rather than just discouraged.
+  const [contentTitles, setContentTitles] = useState<{ quiz: string[]; investigation: string[] }>({
+    quiz: [],
+    investigation: [],
+  });
+  useEffect(() => {
+    api
+      .get<{ quiz: string[]; investigation: string[] }>("/missions/workspace-content-titles")
+      .then(setContentTitles)
+      .catch(() => {});
+  }, []);
+
+  function handleWorkspaceTypeChange(next: MissionWorkspaceType) {
+    setWorkspaceType(next);
+    // A title picked for one workspace type is meaningless for another
+    // (quiz/investigation titles come from two disjoint content sets,
+    // and reflection needs no matching content at all) — clear it
+    // rather than carry over a stale, possibly-invalid value.
+    setTitle("");
+  }
+
+  const titleOptions = workspaceType === "quiz" ? contentTitles.quiz : contentTitles.investigation;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -86,15 +113,36 @@ export function NewMissionModal({
               <label htmlFor="mission-title" className="text-sm font-medium text-foreground">
                 Title
               </label>
-              <input
-                id="mission-title"
-                autoFocus
-                required
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full rounded-lg border border-buddy-border bg-buddy-surface px-3 py-2 text-sm focus:border-buddy-primary focus:outline-none"
-                placeholder="e.g. Set up your local dev environment"
-              />
+              {workspaceType === "reflection" ? (
+                <input
+                  id="mission-title"
+                  autoFocus
+                  required
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full rounded-lg border border-buddy-border bg-buddy-surface px-3 py-2 text-sm focus:border-buddy-primary focus:outline-none"
+                  placeholder="e.g. Set up your local dev environment"
+                />
+              ) : (
+                <select
+                  id="mission-title"
+                  required
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full rounded-lg border border-buddy-border bg-buddy-surface px-3 py-2 text-sm focus:border-buddy-primary focus:outline-none"
+                >
+                  <option value="" disabled>
+                    {titleOptions.length === 0
+                      ? `No ${workspaceType} content written yet`
+                      : `Select a title with ${workspaceType} content written…`}
+                  </option>
+                  {titleOptions.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -171,7 +219,7 @@ export function NewMissionModal({
               <select
                 id="mission-workspace"
                 value={workspaceType}
-                onChange={(e) => setWorkspaceType(e.target.value as MissionWorkspaceType)}
+                onChange={(e) => handleWorkspaceTypeChange(e.target.value as MissionWorkspaceType)}
                 className="w-full rounded-lg border border-buddy-border bg-buddy-surface px-3 py-2 text-sm focus:border-buddy-primary focus:outline-none"
               >
                 {WORKSPACE_TYPES.map((w) => (
@@ -180,11 +228,11 @@ export function NewMissionModal({
                   </option>
                 ))}
               </select>
-              {workspaceType !== "reflection" && (
+              {workspaceType !== "reflection" && titleOptions.length === 0 && (
                 <p className="text-xs text-buddy-coral">
-                  This mission&rsquo;s title must exactly match an entry already added to{" "}
-                  {workspaceType === "quiz" ? "mission_quizzes.py" : "mission_scenarios.py"}, or
-                  employees will get a 404 opening it. Reflection needs no extra content.
+                  No {workspaceType} content has been written yet, so there&rsquo;s nothing to pick a
+                  title from. Choose Reflection, or add content in{" "}
+                  {workspaceType === "quiz" ? "mission_quizzes.py" : "mission_scenarios.py"} first.
                 </p>
               )}
             </div>

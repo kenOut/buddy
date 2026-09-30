@@ -22,6 +22,17 @@ from app.core.config import get_settings  # noqa: E402
 
 @pytest.fixture(scope="module")
 def client():
+    # Reassigned here, not just once at module import time — this
+    # suite's own established fragility class (first diagnosed in
+    # P2.1, recurring in P3/P4.1/the Correction phase): every test file
+    # sets DATABASE_URL once at module top-level, but a module-scoped
+    # fixture doesn't actually execute until pytest gets around to its
+    # first test, by which point a later-collected file's own top-level
+    # assignment may have already overwritten it. Reasserting
+    # immediately before TestClient(...) triggers the real lifespan/
+    # seed guarantees this file runs against its own isolated database
+    # regardless of collection order.
+    os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{TEST_DB_PATH}"
     with TestClient(app) as c:
         # Manager Portal auth (the login-gated admin/analytics/quest-builder
         # routers): authenticate this shared client once so every admin-only
@@ -29,6 +40,17 @@ def client():
         c.post("/api/v1/admin/login", json={"password": get_settings().admin_password})
         yield c
     TEST_DB_PATH.unlink(missing_ok=True)
+
+
+@pytest.fixture(autouse=True)
+def _restore_database_url_after_each_test():
+    """Restore whatever DATABASE_URL was active before this file's
+    tests ran, so as not to leave a stale value for any test collected
+    after this file."""
+    original = os.environ.get("DATABASE_URL")
+    yield
+    if original is not None:
+        os.environ["DATABASE_URL"] = original
 
 
 @pytest.fixture(scope="module")
@@ -45,9 +67,20 @@ def demo_department_id(client):
 
 @pytest.fixture(scope="module")
 def demo_project_id(client, demo_department_id):
-    projects = client.get(f"/api/v1/projects?department_id={demo_department_id}").json()
-    assert projects, "seeded department has no projects"
-    return projects[0]["id"]
+    # seed_data.py no longer seeds any demo Projects (they existed only
+    # as project_id FKs for the demo Missions removed alongside them —
+    # see seed_data.py's own module docstring), so this file creates its
+    # own instead of assuming one already exists.
+    res = client.post(
+        "/api/v1/projects",
+        json={
+            "department_id": demo_department_id,
+            "name": "Quest Test Project",
+            "description": "A project used only for these Quest tests.",
+        },
+    )
+    assert res.status_code == 201, res.text
+    return res.json()["id"]
 
 
 def _quest_payload(**overrides):

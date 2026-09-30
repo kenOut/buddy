@@ -937,3 +937,97 @@ export interface CapabilityEmployeesResponse {
   department_id: string | null;
   employees: CapabilityEmployeeItem[];
 }
+
+export type AdminUserRole = "people_culture" | "security_it" | "departments";
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  full_name: string;
+  role: AdminUserRole;
+  is_active: boolean;
+  created_at: string;
+}
+
+// ---- Manager Performance & Readiness Visibility — Stage 1 ----
+
+/** Mirrors schemas/manager_performance.py exactly. Structurally safe by
+ * construction — no field here can carry expected_answer/
+ * expected_behavior/reference_solution, a scenario/quiz answer key, or
+ * raw AI provider output; those are never read by
+ * manager_performance_service.py at all. `readiness` is exposed exactly
+ * as readiness_service.get_readiness_summary computes it — nothing here
+ * recomputes or infers `ready` client-side. `performance_summary.
+ * average_score` is informational only and must never be treated as a
+ * readiness signal. */
+export interface ManagerEmployeeInfo {
+  id: string;
+  full_name: string;
+  email: string;
+  job_title: string | null;
+  department_id: string | null;
+  department_name: string | null;
+  team: string | null;
+}
+
+export interface ManagerReadinessInfo {
+  ready: boolean;
+  onboarding_completed: boolean;
+  required_quest_count: number;
+  completed_required_quest_count: number;
+  remaining_required_quest_count: number;
+  required_mission_count: number;
+  completed_required_mission_count: number;
+  remaining_required_mission_count: number;
+  blockers: string[];
+}
+
+export interface ManagerMissionPerformance {
+  id: string;
+  title: string;
+  required: boolean;
+  assignment_status: MissionAssignmentStatus;
+  attempt_status: MissionAttemptStatus | null;
+  score: number | null;
+  passed: boolean | null;
+  feedback: string | null;
+  completed_at: string | null;
+}
+
+export interface ManagerQuestPerformance {
+  id: string;
+  title: string;
+  required: boolean;
+  attempt_status: QuestAttemptStatus | null;
+  score: number | null;
+  passed: boolean | null;
+  feedback: string | null;
+  completed_at: string | null;
+}
+
+export interface ManagerCapabilitySummary {
+  capability_id: string;
+  capability_key: string;
+  capability_name: string;
+  level: CapabilityLevel;
+  confidence: number;
+  evidence_count: number;
+}
+
+export interface ManagerPerformanceSummary {
+  missions_assigned: number;
+  missions_completed: number;
+  quests_assigned: number;
+  quests_completed: number;
+  scored_items: number;
+  average_score: number | null;
+}
+
+export interface ManagerEmployeePerformanceResponse {
+  employee: ManagerEmployeeInfo;
+  readiness: ManagerReadinessInfo;
+  missions: ManagerMissionPerformance[];
+  quests: ManagerQuestPerformance[];
+  capabilities: ManagerCapabilitySummary[];
+  performance_summary: ManagerPerformanceSummary;
+}

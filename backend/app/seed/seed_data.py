@@ -1,9 +1,9 @@
-import random
 from datetime import date
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Department, Employee, Mission, Organization, Project, Role
+from app.models import Department, Employee, Organization, Role, Team
 
 # pravatar.cc serves a fixed set of ~70 numbered placeholder headshots
 # purpose-built for mock/demo data like this — not photos of real,
@@ -12,91 +12,56 @@ from app.models import Department, Employee, Mission, Organization, Project, Rol
 def _avatar_url(index: int) -> str:
     return f"https://i.pravatar.cc/300?img={index}"
 
-# Deterministic (fixed-seed) name/title pools for generating the rest of
-# Engineering's two branches. Ghanaian given/family names, matching the
-# style already established by the hand-written demo employees above
-# (Sarah Boateng, David Owusu, Michael Mensah, Ama Asante, Kwame Adjei).
-_GIVEN_NAMES = [
-    "Efua", "Kojo", "Abena", "Yaw", "Akosua", "Kwabena", "Adwoa", "Nana",
-    "Kwesi", "Esi", "Kofi", "Afia", "Yaa", "Kwaku", "Akua", "Fiifi",
-]
-_FAMILY_NAMES = [
-    "Owusu", "Bonsu", "Darko", "Tutu", "Nkrumah", "Sarpong", "Frimpong",
-    "Yeboah", "Amoah", "Antwi", "Agyeman", "Baffour", "Danso", "Gyasi",
-]
-_FINOPS_TITLES = ["FinOps Engineer", "Cloud Cost Analyst", "FinOps Lead", "Financial Systems Engineer"]
-_TECHOPS_TITLES = [
-    "Cloud Infrastructure Engineer",
-    "Systems Engineer",
-    "Network Reliability Engineer",
-    "Infrastructure Engineer",
-    "Observability Engineer",
-    "Reliability Engineer",
-]
-_FINOPS_HEADCOUNT = 4
-# David, Michael, Ama, and Kwame are already TechOps — generate the
-# remaining headcount to reach 10 total.
-_TECHOPS_EXISTING_HEADCOUNT = 4
-_TECHOPS_TOTAL_HEADCOUNT = 10
 
+async def _ensure_departments(
+    db: AsyncSession, organization_id: str, departments_by_name: dict[str, str]
+) -> dict[str, Department]:
+    """Get-or-create by (organization_id, name) — mirrors
+    seed/capabilities.py's ensure_capabilities_seeded idempotent
+    pattern: query what already exists, skip it, only add and flush
+    what's actually missing. Returns every requested name mapped to its
+    Department row, whether it already existed or was just created, so
+    callers can immediately reference `.id` regardless of which case
+    applied.
 
-def _generate_branch_employees(
-    *, org_id: str, department_id: str, manager_id: str, existing_full_names: set[str]
-) -> list[Employee]:
-    """Fixed-seed random generation — reproducible across restarts and
-    test runs, not true nondeterministic randomness, so the demo dataset
-    (and anything that snapshots it, like a screenshot or a fixture)
-    stays stable."""
-    rng = random.Random(42)
-    used_names = set(existing_full_names)
-    used_emails: set[str] = set()
+    Deliberately separate from the raw `Department(...)` + `db.add()`
+    calls seed_demo_data uses for Engineering/Products/Finance above —
+    those are only ever reached once per database at all (the
+    lifespan caller in main.py never runs seed_demo_data a second time
+    against a database that already has an Organization), so leaving
+    them untouched is correct; this helper exists specifically so the
+    five newly-added departments can be verified idempotent on their
+    own, independent of that outer guarantee.
+    """
+    result = await db.execute(select(Department).where(Department.organization_id == organization_id))
+    existing = {d.name: d for d in result.scalars().all()}
 
-    def _unique_person() -> tuple[str, str, str]:
-        while True:
-            given = rng.choice(_GIVEN_NAMES)
-            family = rng.choice(_FAMILY_NAMES)
-            full_name = f"{given} {family}"
-            email = f"{given.lower()}.{family.lower()}@buddy.dev"
-            if full_name not in used_names and email not in used_emails:
-                used_names.add(full_name)
-                used_emails.add(email)
-                return full_name, email, given
+    created = False
+    for name, description in departments_by_name.items():
+        if name in existing:
+            continue
+        department = Department(organization_id=organization_id, name=name, description=description)
+        db.add(department)
+        existing[name] = department
+        created = True
 
-    def _branch(*, team: str, count: int, titles: list[str], start_year: int) -> list[Employee]:
-        people = []
-        for i in range(count):
-            full_name, email, _ = _unique_person()
-            people.append(
-                Employee(
-                    organization_id=org_id,
-                    department_id=department_id,
-                    manager_id=manager_id,
-                    full_name=full_name,
-                    email=email,
-                    job_title=rng.choice(titles),
-                    team=team,
-                    employment_type="full_time",
-                    start_date=date(start_year + (i % 2), (i % 12) + 1, (i * 3 % 27) + 1),
-                    status="active",
-                    avatar_url=_avatar_url(rng.randint(1, 70)),
-                )
-            )
-        return people
-
-    return [
-        *_branch(team="FinOps", count=_FINOPS_HEADCOUNT, titles=_FINOPS_TITLES, start_year=2022),
-        *_branch(
-            team="TechOps",
-            count=_TECHOPS_TOTAL_HEADCOUNT - _TECHOPS_EXISTING_HEADCOUNT,
-            titles=_TECHOPS_TITLES,
-            start_year=2022,
-        ),
-    ]
+    if created:
+        await db.flush()
+    return existing
 
 
 async def seed_demo_data(db: AsyncSession) -> None:
     """Creates the MVP demo dataset: Kowri Technologies / Engineering /
-    Michael Mensah (SRE), managed by Sarah, supervised by David."""
+    Nelikem Agbanu (TechOps / Monitoring Engineer, the demo identity —
+    see DEMO_EMPLOYEE_EMAIL), managed by Kofi Asamoah (VP of
+    Engineering), supervised by Catherine Amarteifio (Lead Technology
+    Operations Engineer). The roster is the real Engineering Department
+    Profile — no placeholder/fictional employees are seeded. No demo
+    Missions are seeded either — the Missions feature/admin page/
+    onboarding scene stay fully intact, just empty of placeholder
+    content until real missions are added (via POST /missions).
+    readiness_service.py treats zero required missions as vacuously
+    satisfied by design, so this doesn't block onboarding readiness."""
 
     org = Organization(name="Kowri Technologies", slug="kowri-technologies")
     db.add(org)
@@ -108,258 +73,367 @@ async def seed_demo_data(db: AsyncSession) -> None:
         description="Builds and operates Kowri's financial services platform — payments, credit, "
         "and merchant tools used across Africa.",
     )
-    design = Department(
-        organization_id=org.id,
-        name="Design",
-        description="Owns product design for Kowri's financial super-app and its design system.",
-    )
-    db.add_all([engineering, design])
+    db.add(engineering)
     await db.flush()
 
-    role_sre = Role(
+    # Matches Nelikem Agbanu's real title below — the demo identity
+    # needs a real role_id, not just a job_title string, since
+    # role-based Quest assignment/eligibility (QuestAssignment's ROLE
+    # type) matches on role_id.
+    role_techops_monitoring = Role(
         department_id=engineering.id,
-        title="Site Reliability Engineer",
+        title="TechOps / Monitoring Engineer",
         level="mid",
-        description="Keeps Kowri's payments and financial services platform fast, available, and "
-        "observable for customers across Africa.",
+        description="Monitors and operates Kowri's platform infrastructure.",
     )
-    role_manager = Role(
-        department_id=engineering.id,
-        title="Engineering Manager",
-        level="lead",
-        description="Leads the Engineering department.",
-    )
-    role_staff_sre = Role(
-        department_id=engineering.id,
-        title="Staff Site Reliability Engineer",
-        level="senior",
-        description="Technical lead for reliability initiatives.",
-    )
-    db.add_all([role_sre, role_manager, role_staff_sre])
+    db.add(role_techops_monitoring)
     await db.flush()
 
-    sarah = Employee(
+    # The real Engineering Department Profile — the current, active
+    # roster. `team` matches the Team rows created below verbatim.
+    # manager_id/supervisor_id follow a department-level/team-level
+    # split (manager = department-level lead, supervisor = team-level
+    # lead): Kofi, as VP of Engineering,
+    # is manager for every team below Leadership & Delivery; each
+    # team's own "Lead" (Catherine for TechOps, Ishvi for Security &
+    # IT) is supervisor for their team's other members. No hierarchy is
+    # invented beyond what the titles themselves already state —
+    # Leadership & Delivery's own three members (Kofi/Araba/Henry) are
+    # left without a manager_id, since nothing in the profile states
+    # their relative seniority to each other.
+    kofi = Employee(
         organization_id=org.id,
         department_id=engineering.id,
-        role_id=role_manager.id,
-        full_name="Sarah Boateng",
-        email="sarah.boateng@buddy.dev",
-        job_title="Engineering Manager",
+        full_name="Kofi Asamoah",
+        email="kofi.asamoah@buddy.dev",
+        job_title="VP of Engineering / Engineering Lead",
+        team="Leadership & Delivery",
         employment_type="full_time",
-        start_date=date(2021, 3, 1),
+        start_date=date(2020, 1, 6),
         status="active",
-        avatar_url=_avatar_url(47),
+        avatar_url=_avatar_url(21),
     )
-    db.add(sarah)
-    await db.flush()
-
-    david = Employee(
+    araba = Employee(
         organization_id=org.id,
         department_id=engineering.id,
-        role_id=role_staff_sre.id,
-        manager_id=sarah.id,
-        full_name="David Owusu",
-        email="david.owusu@buddy.dev",
-        job_title="Staff Site Reliability Engineer",
-        team="TechOps",
+        full_name="Araba Amuasi",
+        email="araba.amuasi@buddy.dev",
+        job_title="Delivery & Scrum Lead",
+        team="Leadership & Delivery",
         employment_type="full_time",
-        start_date=date(2021, 8, 15),
+        start_date=date(2020, 9, 14),
         status="active",
-        avatar_url=_avatar_url(12),
+        avatar_url=_avatar_url(23),
     )
-    db.add(david)
-    await db.flush()
-
-    michael = Employee(
+    henry = Employee(
         organization_id=org.id,
         department_id=engineering.id,
-        role_id=role_sre.id,
-        manager_id=sarah.id,
-        supervisor_id=david.id,
-        full_name="Michael Mensah",
-        email="michael.mensah@buddy.dev",
-        job_title="Site Reliability Engineer",
-        team="TechOps",
+        full_name="Henry Sampson",
+        email="henry.sampson@buddy.dev",
+        job_title="Chief Engineering Officer (Chief Technology / Technical Officer)",
+        team="Leadership & Delivery",
+        employment_type="full_time",
+        start_date=date(2019, 11, 4),
+        status="active",
+        avatar_url=_avatar_url(25),
+    )
+    db.add_all([kofi, araba, henry])
+    await db.flush()
+
+    catherine = Employee(
+        organization_id=org.id,
+        department_id=engineering.id,
+        manager_id=kofi.id,
+        full_name="Catherine Amarteifio",
+        email="catherine.amarteifio@buddy.dev",
+        job_title="Lead Technology Operations Engineer",
+        team="Technology Operations (TechOps)",
+        employment_type="full_time",
+        start_date=date(2021, 2, 1),
+        status="active",
+        avatar_url=_avatar_url(27),
+    )
+    ishvi = Employee(
+        organization_id=org.id,
+        department_id=engineering.id,
+        manager_id=kofi.id,
+        full_name="Ishvi Aculey",
+        email="ishvi.aculey@buddy.dev",
+        job_title="Lead Security & IT Engineer",
+        team="Security & IT (SIT)",
+        employment_type="full_time",
+        start_date=date(2021, 4, 19),
+        status="active",
+        avatar_url=_avatar_url(29),
+    )
+    db.add_all([catherine, ishvi])
+    await db.flush()
+
+    # Nelikem is the new demo identity — see DEMO_EMPLOYEE_EMAIL in
+    # config.py, updated to point here. status="onboarding" and
+    # start_date=today mirror exactly what Michael Mensah (the previous
+    # demo identity) had, for the same reason: this is the one employee
+    # /onboarding/bundle/demo and the whole unauthenticated demo flow
+    # resolve through, so it must look like someone genuinely mid-
+    # onboarding, not an already-settled employee.
+    nelikem = Employee(
+        organization_id=org.id,
+        department_id=engineering.id,
+        role_id=role_techops_monitoring.id,
+        manager_id=kofi.id,
+        supervisor_id=catherine.id,
+        full_name="Nelikem Agbanu",
+        email="nelikem.agbanu@buddy.dev",
+        job_title="TechOps / Monitoring Engineer",
+        team="Technology Operations (TechOps)",
         employment_type="full_time",
         start_date=date.today(),
         status="onboarding",
-        avatar_url=_avatar_url(33),
+        avatar_url=_avatar_url(31),
     )
-    db.add(michael)
+    db.add(nelikem)
+    await db.flush()
 
-    teammates = [
+    new_roster = [
+        # Software Engineering & Platform — no named team lead in the
+        # profile, so Kofi (department-level VP) is manager, no
+        # supervisor.
         Employee(
             organization_id=org.id,
             department_id=engineering.id,
-            role_id=role_sre.id,
-            manager_id=sarah.id,
-            supervisor_id=david.id,
-            full_name="Ama Asante",
-            email="ama.asante@buddy.dev",
-            job_title="DevOps Engineer",
-            team="TechOps",
+            manager_id=kofi.id,
+            full_name="Michael Ato Hutchful",
+            email="michael.hutchful@buddy.dev",
+            job_title="Senior Software / Platform Engineer",
+            team="Software Engineering & Platform",
             employment_type="full_time",
-            start_date=date(2022, 6, 1),
+            start_date=date(2021, 5, 10),
             status="active",
-            avatar_url=_avatar_url(5),
+            avatar_url=_avatar_url(53),
         ),
         Employee(
             organization_id=org.id,
             department_id=engineering.id,
-            role_id=role_sre.id,
-            manager_id=sarah.id,
-            supervisor_id=david.id,
-            full_name="Kwame Adjei",
-            email="kwame.adjei@buddy.dev",
-            job_title="Platform Engineer",
-            team="TechOps",
+            manager_id=kofi.id,
+            full_name="Ebenezer Ohene-Adutwum",
+            email="ebenezer.ohene-adutwum@buddy.dev",
+            job_title="Software / Platform Engineer",
+            team="Software Engineering & Platform",
             employment_type="full_time",
-            start_date=date(2023, 1, 10),
+            start_date=date(2022, 3, 7),
             status="active",
-            avatar_url=_avatar_url(15),
+            avatar_url=_avatar_url(55),
+        ),
+        Employee(
+            organization_id=org.id,
+            department_id=engineering.id,
+            manager_id=kofi.id,
+            full_name="Isaac Nii-Laye Laryea",
+            email="isaac.laryea@buddy.dev",
+            job_title="Software Engineer",
+            team="Software Engineering & Platform",
+            employment_type="full_time",
+            start_date=date(2022, 8, 22),
+            status="active",
+            avatar_url=_avatar_url(57),
+        ),
+        Employee(
+            organization_id=org.id,
+            department_id=engineering.id,
+            manager_id=kofi.id,
+            full_name="Kelvin Wise Amenya",
+            email="kelvin.amenya@buddy.dev",
+            job_title="Software Engineer",
+            team="Software Engineering & Platform",
+            employment_type="full_time",
+            start_date=date(2023, 2, 13),
+            status="active",
+            avatar_url=_avatar_url(59),
+        ),
+        Employee(
+            organization_id=org.id,
+            department_id=engineering.id,
+            manager_id=kofi.id,
+            full_name="Seth Kotey",
+            email="seth.kotey@buddy.dev",
+            job_title="Software Engineer",
+            team="Software Engineering & Platform",
+            employment_type="full_time",
+            start_date=date(2023, 6, 5),
+            status="active",
+            avatar_url=_avatar_url(61),
+        ),
+        # Technology Operations (TechOps) — Catherine (created above) is
+        # supervisor for the rest of this team.
+        Employee(
+            organization_id=org.id,
+            department_id=engineering.id,
+            manager_id=kofi.id,
+            supervisor_id=catherine.id,
+            full_name="Prince Amponsah",
+            email="prince.amponsah@buddy.dev",
+            job_title="Technology Operations & Support Engineer II",
+            team="Technology Operations (TechOps)",
+            employment_type="full_time",
+            start_date=date(2021, 10, 18),
+            status="active",
+            avatar_url=_avatar_url(63),
+        ),
+        Employee(
+            organization_id=org.id,
+            department_id=engineering.id,
+            manager_id=kofi.id,
+            supervisor_id=catherine.id,
+            full_name="Philip Kofi Aboagye",
+            email="philip.aboagye@buddy.dev",
+            job_title="TechOps / Operations Engineer",
+            team="Technology Operations (TechOps)",
+            employment_type="full_time",
+            start_date=date(2022, 1, 24),
+            status="active",
+            avatar_url=_avatar_url(65),
+        ),
+        Employee(
+            organization_id=org.id,
+            department_id=engineering.id,
+            manager_id=kofi.id,
+            supervisor_id=catherine.id,
+            full_name="Lawrence Kofi Mensah",
+            email="lawrence.mensah@buddy.dev",
+            job_title="TechOps / Monitoring & Operations Engineer",
+            team="Technology Operations (TechOps)",
+            employment_type="full_time",
+            start_date=date(2022, 9, 12),
+            status="active",
+            avatar_url=_avatar_url(67),
+        ),
+        Employee(
+            organization_id=org.id,
+            department_id=engineering.id,
+            manager_id=kofi.id,
+            supervisor_id=catherine.id,
+            full_name="William Akwasi Adu-Donkor",
+            email="william.adu-donkor@buddy.dev",
+            job_title="Operations Engineer",
+            team="Technology Operations (TechOps)",
+            employment_type="full_time",
+            start_date=date(2023, 4, 3),
+            status="active",
+            avatar_url=_avatar_url(2),
+        ),
+        # Security & IT (SIT) — Ishvi (created above) is supervisor for
+        # the rest of this team.
+        Employee(
+            organization_id=org.id,
+            department_id=engineering.id,
+            manager_id=kofi.id,
+            supervisor_id=ishvi.id,
+            full_name="Kwame Afranie",
+            email="kwame.afranie@buddy.dev",
+            job_title="Security & IT Engineer",
+            team="Security & IT (SIT)",
+            employment_type="full_time",
+            start_date=date(2022, 5, 16),
+            status="active",
+            avatar_url=_avatar_url(4),
+        ),
+        Employee(
+            organization_id=org.id,
+            department_id=engineering.id,
+            manager_id=kofi.id,
+            supervisor_id=ishvi.id,
+            full_name="Nii Osa Odoi",
+            email="nii.odoi@buddy.dev",
+            job_title="Security & IT Engineer",
+            team="Security & IT (SIT)",
+            employment_type="full_time",
+            start_date=date(2023, 7, 30),
+            status="active",
+            avatar_url=_avatar_url(6),
         ),
     ]
-    db.add_all(teammates)
+    db.add_all(new_roster)
     await db.flush()
 
-    # Engineering has two branches: FinOps (cloud cost/financial
-    # operations) and TechOps (infrastructure/reliability). David,
-    # Michael, Ama, and Kwame above are TechOps's first four; the rest of
-    # each branch's roster is generated here — deterministically random
-    # (a fixed seed, not true nondeterministic randomness) so the demo
-    # dataset stays reproducible across restarts and test runs rather
-    # than silently changing every time the app boots.
-    branch_employees = _generate_branch_employees(
-        org_id=org.id,
-        department_id=engineering.id,
-        manager_id=sarah.id,
-        existing_full_names={"Sarah Boateng", "David Owusu", "Michael Mensah", "Ama Asante", "Kwame Adjei"},
+    # Phase A — Team Entity & Department -> Team Foundation. Adds the
+    # Team rows the finalized Kowri org chart specifies, plus the two
+    # additional departments (Products, Finance) required for two of
+    # those rows to exist at all — Team.department_id is a NOT NULL FK,
+    # so "Products has a Delivery team" is impossible without a real
+    # Products department row first. Deliberately does NOT touch any
+    # existing Employee row, Employee.team value, or the Engineering/
+    # Design departments already seeded above — purely additive.
+    products = Department(
+        organization_id=org.id,
+        name="Products",
+        description="Owns Kowri's product roadmap, delivery, and customer-facing experience.",
     )
-    db.add_all(branch_employees)
+    finance = Department(
+        organization_id=org.id,
+        name="Finance",
+        description="Owns Kowri's financial operations, including cloud cost management.",
+    )
+    db.add_all([products, finance])
     await db.flush()
 
-    atlas_project = Project(
-        department_id=engineering.id,
-        name="Automation Fraud Detection",
-        description="Automated fraud-detection and risk-scoring tooling protecting transactions "
-        "across Kowri's payments platform.",
+    # Correction — Complete Kowri Department Structure. The remaining
+    # five top-level departments in the finalized org chart — none of
+    # them have any Team rows specified under them, so unlike Products/
+    # Finance above, nothing requires them to exist before this point;
+    # they're added here purely to complete the organization structure
+    # itself, via the idempotent get-or-create helper above rather than
+    # a raw unconditional insert (see _ensure_departments's own
+    # docstring for why that distinction matters).
+    await _ensure_departments(
+        db,
+        org.id,
+        {
+            "People & Culture": "Owns hiring, onboarding, and employee experience at Kowri.",
+            "Sales": "Owns new business and revenue growth for Kowri's platform.",
+            "Marketing": "Owns Kowri's brand, positioning, and go-to-market.",
+            "Compliance": "Owns regulatory compliance across Kowri's markets.",
+            "Relation Management": "Owns Kowri's key partner and merchant relationships.",
+        },
     )
-    onboarding_project = Project(
-        department_id=engineering.id,
-        name="Ecosystems Integration",
-        description="Integrations connecting Kowri to banking partners, mobile money providers, "
-        "and payment networks across Africa.",
-    )
-    db.add_all([atlas_project, onboarding_project])
-    await db.flush()
 
-    missions = [
-        Mission(
+    # Engineering's team roster — replaces the original TechOps/Security &
+    # IT/Platform Engineering placeholder set with the real Engineering
+    # Department Profile's four groupings. "Technology Operations
+    # (TechOps)" and "Security & IT (SIT)" carry their short forms in
+    # parentheses, matching the profile document verbatim, since the
+    # original short names ("TechOps"/"Security & IT") were already
+    # familiar labels elsewhere in this project's own demo narrative
+    # (Employee.team free-text values, mission scenario content) — kept
+    # recognizable rather than dropped.
+    teams = [
+        Team(
             department_id=engineering.id,
-            project_id=onboarding_project.id,
-            title="Set up your local dev environment",
-            description="Install the Kowri CLI, clone the platform repos, and run the bootstrap script.",
-            mission_type="setup",
-            estimated_minutes=45,
-            sort_order=1,
-            workspace_type="reflection",
+            name="Leadership & Delivery",
+            description="Engineering leadership and delivery/scrum management.",
         ),
-        Mission(
+        Team(
             department_id=engineering.id,
-            project_id=atlas_project.id,
-            title="Read the on-call handbook",
-            description="Understand escalation paths, severity levels, and the incident response process.",
-            mission_type="reading",
-            estimated_minutes=20,
-            sort_order=2,
-            workspace_type="quiz",
+            name="Software Engineering & Platform",
+            description="Product and platform software engineering.",
         ),
-        Mission(
+        Team(
             department_id=engineering.id,
-            project_id=onboarding_project.id,
-            title="Meet your onboarding buddy",
-            description="Grab 15 minutes with your buddy to ask anything about the team.",
-            mission_type="meeting",
-            estimated_minutes=15,
-            sort_order=3,
-            workspace_type="reflection",
+            name="Technology Operations (TechOps)",
+            description="Infrastructure, monitoring, and operations.",
         ),
-        Mission(
+        Team(
             department_id=engineering.id,
-            project_id=onboarding_project.id,
-            title="Complete security & compliance training",
-            description="Finish the mandatory security awareness and data handling training.",
-            mission_type="training",
-            estimated_minutes=30,
-            sort_order=4,
-            workspace_type="quiz",
+            name="Security & IT (SIT)",
+            description="Security and internal IT.",
         ),
-        Mission(
-            department_id=engineering.id,
-            project_id=atlas_project.id,
-            title="Ship your first change to staging",
-            description="Open a small PR against Atlas and deploy it to the staging environment.",
-            mission_type="task",
-            estimated_minutes=60,
-            sort_order=5,
-            workspace_type="reflection",
+        Team(department_id=products.id, name="Delivery", description="Product delivery and execution."),
+        Team(
+            department_id=products.id,
+            name="Customer Experience",
+            description="Customer-facing product experience.",
         ),
-        Mission(
-            department_id=engineering.id,
-            project_id=onboarding_project.id,
-            title="1:1 with your manager",
-            description="Set expectations and goals for your first 30 days with Sarah.",
-            mission_type="meeting",
-            estimated_minutes=30,
-            sort_order=6,
-            workspace_type="reflection",
-        ),
-        Mission(
-            department_id=engineering.id,
-            project_id=atlas_project.id,
-            title="Diagnose the checkout latency spike",
-            description="Customers are seeing slow checkouts. Use the metrics, logs, service map, "
-            "and timeline to find the affected service and root cause.",
-            mission_type="task",
-            estimated_minutes=40,
-            sort_order=7,
-            required=True,
-            workspace_type="investigation",
-        ),
-        # SRE/DevOps-technical missions — real production-shaped incidents
-        # (crash loop, bad rollout) with deterministic grading via
-        # mission_scenarios.py, same pattern as the checkout-latency
-        # mission above. Marked required=True: these three are the ones
-        # readiness_service.py now gates on (see its module docstring) —
-        # the softer setup/reading/meeting/training missions above stay
-        # optional checklist items.
-        Mission(
-            department_id=engineering.id,
-            project_id=atlas_project.id,
-            title="Investigate the payment-worker crash loop",
-            description="A background worker keeps restarting after this morning's deploy. Use "
-            "the metrics, logs, service map, and timeline to find the affected service and "
-            "root cause before it becomes customer-facing.",
-            mission_type="task",
-            estimated_minutes=40,
-            sort_order=8,
-            required=True,
-            workspace_type="investigation",
-        ),
-        Mission(
-            department_id=engineering.id,
-            project_id=onboarding_project.id,
-            title="Triage the failed production rollout",
-            description="A deploy just spiked error rates and the team is deciding whether to roll "
-            "back. Use the metrics, logs, service map, and timeline to find out what's actually "
-            "broken before that call gets made.",
-            mission_type="task",
-            estimated_minutes=40,
-            sort_order=9,
-            required=True,
-            workspace_type="investigation",
-        ),
+        Team(department_id=finance.id, name="FinOps", description="Cloud cost and financial operations."),
     ]
-    db.add_all(missions)
+    db.add_all(teams)
 
     await db.commit()

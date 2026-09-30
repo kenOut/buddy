@@ -67,6 +67,16 @@ async def get_attempt(db: AsyncSession, mission_id: str, employee_id: str) -> Mi
     return result.scalar_one_or_none()
 
 
+async def list_attempts_for_employee(db: AsyncSession, employee_id: str) -> list[MissionAttempt]:
+    """Bulk, not per-mission — mirrors quest_attempt_service.list_attempts_for_employee
+    exactly, for the same reason: a caller building a per-employee summary across
+    every assigned Mission (e.g. manager_performance_service) must not issue one
+    query per Mission to get there."""
+    stmt = select(MissionAttempt).where(MissionAttempt.employee_id == employee_id)
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
 async def get_attempt_by_id(db: AsyncSession, attempt_id: str) -> MissionAttempt | None:
     return await db.get(MissionAttempt, attempt_id)
 

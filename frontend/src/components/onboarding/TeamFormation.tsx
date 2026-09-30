@@ -51,6 +51,40 @@ const TEAM_PALETTE = [
   { chip: "bg-buddy-navy", text: "text-white", dot: "bg-buddy-navy" },
 ];
 
+/** Seniority tiers inferred from each person's own `job_title` text —
+ * no separate "level" field exists on Employee, and titles already
+ * carry this signal plainly (e.g. "Chief Engineering Officer", "Lead
+ * Technology Operations Engineer"). Checked in order, first match
+ * wins, so a title carrying two signals (e.g. "VP of Engineering /
+ * Engineering Lead") resolves to the more senior one listed first. A
+ * title matching none of these (the common case — a plain "Software
+ * Engineer"/"Operations Engineer") falls through to the last, most
+ * junior tier. */
+const HIERARCHY_TIERS: { pattern: RegExp; rank: number }[] = [
+  { pattern: /chief/i, rank: 0 },
+  { pattern: /\bvp\b|vice president/i, rank: 1 },
+  { pattern: /\blead\b/i, rank: 2 },
+  { pattern: /\bsenior\b/i, rank: 3 },
+  { pattern: /\bII\b/, rank: 4 },
+];
+
+function hierarchyRank(person: EmployeeSummary): number {
+  const title = person.job_title ?? "";
+  for (const { pattern, rank } of HIERARCHY_TIERS) {
+    if (pattern.test(title)) return rank;
+  }
+  return HIERARCHY_TIERS.length;
+}
+
+/** Most senior first, alphabetical by name as a stable tiebreaker
+ * within the same tier — never mutates the array it's given. */
+function byHierarchy(peers: EmployeeSummary[]): EmployeeSummary[] {
+  return [...peers].sort((a, b) => {
+    const rankDiff = hierarchyRank(a) - hierarchyRank(b);
+    return rankDiff !== 0 ? rankDiff : a.full_name.localeCompare(b.full_name);
+  });
+}
+
 /**
  * A real photo when `avatar_url` resolves to one (seeded placeholder
  * headshots, or an admin-uploaded photo — see the employee detail
@@ -141,15 +175,20 @@ function PlayerChip({
  * label on any individual chip, only the row shape itself.
  */
 export function TeamFormation({ peers }: { peers: EmployeeSummary[] }) {
-  const starters = peers.slice(0, 11);
-  const bench = peers.slice(11);
+  // Most senior title first (see hierarchyRank/byHierarchy above) — the
+  // formation itself (who's in the singular "1" slot vs. the bench) now
+  // reflects real seniority, not just whatever order the API happened
+  // to return.
+  const ordered = byHierarchy(peers);
+  const starters = ordered.slice(0, 11);
+  const bench = ordered.slice(11);
   const rows = rowsFor(starters.length);
 
   // Colour-code by each person's real `team` field (e.g. TechOps/FinOps)
   // so that real grouping survives the redesign — just as a colour and
   // a legend dot instead of a section header.
   const teamOrder: string[] = [];
-  for (const p of peers) {
+  for (const p of ordered) {
     const key = p.team ?? "Team";
     if (!teamOrder.includes(key)) teamOrder.push(key);
   }
@@ -193,7 +232,7 @@ export function TeamFormation({ peers }: { peers: EmployeeSummary[] }) {
                 <PlayerChip
                   key={person.id}
                   person={person}
-                  number={peers.indexOf(person) + 1}
+                  number={ordered.indexOf(person) + 1}
                   colorIndex={colorIndexOf(person)}
                 />
               ))}

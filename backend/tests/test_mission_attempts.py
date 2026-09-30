@@ -26,6 +26,17 @@ WRONG_CAUSE = "Payments provider outage"
 
 @pytest.fixture(scope="module")
 def client():
+    # Reassigned here, not just once at module import time — this
+    # suite's own established fragility class (first diagnosed in
+    # P2.1, recurring in P3/P4.1/the Correction phase): every test file
+    # sets DATABASE_URL once at module top-level, but a module-scoped
+    # fixture doesn't actually execute until pytest gets around to its
+    # first test, by which point a later-collected file's own top-level
+    # assignment may have already overwritten it. Reasserting
+    # immediately before TestClient(...) triggers the real lifespan/
+    # seed guarantees this file runs against its own isolated database
+    # regardless of collection order.
+    os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{TEST_DB_PATH}"
     with TestClient(app) as c:
         # Manager Portal auth (the login-gated admin/analytics/quest-builder
         # routers): authenticate this shared client once so every admin-only
@@ -35,10 +46,15 @@ def client():
     TEST_DB_PATH.unlink(missing_ok=True)
 
 
-@pytest.fixture(scope="module")
-def demo_employee_id(client):
-    bundle = client.get("/api/v1/onboarding/bundle/demo").json()
-    return bundle["employee"]["id"]
+@pytest.fixture(autouse=True)
+def _restore_database_url_after_each_test():
+    """Restore whatever DATABASE_URL was active before this file's
+    tests ran, so as not to leave a stale value for any test collected
+    after this file."""
+    original = os.environ.get("DATABASE_URL")
+    yield
+    if original is not None:
+        os.environ["DATABASE_URL"] = original
 
 
 @pytest.fixture(scope="module")
@@ -49,44 +65,73 @@ def org_id(client):
 
 @pytest.fixture(scope="module")
 def department_id(client):
-    # Same department as the demo employee — so a mission_id looked up
-    # from the demo bundle is also assignable to a freshly-created
-    # employee in these tests (Mission assignment provisioning is
-    # department-scoped; see mission_service.ensure_assignments_for_employee).
     bundle = client.get("/api/v1/onboarding/bundle/demo").json()
     return bundle["employee"]["department_id"]
 
 
-@pytest.fixture(scope="module")
-def mission_id(client, demo_employee_id):
-    missions = client.get(f"/api/v1/employees/{demo_employee_id}/missions").json()
-    matches = [m for m in missions if m["mission"]["title"] == MISSION_TITLE]
-    assert matches, "seeded investigation mission not found"
-    return matches[0]["mission_id"]
-
-
-@pytest.fixture(scope="module")
-def reflection_mission_id(client, demo_employee_id):
-    # Fetching the bundle provisions/returns mission_assignments, including
-    # the reflection-workspace missions — same source the real
-    # employee-facing MissionWorkspace reads from.
-    bundle = client.get(f"/api/v1/onboarding/bundle/{demo_employee_id}").json()
-    match = next(
-        a for a in bundle["mission_assignments"] if a["mission"]["title"] == "Meet your onboarding buddy"
+def _create_mission(client, department_id, *, title, workspace_type, required=False):
+    res = client.post(
+        "/api/v1/missions",
+        json={
+            "department_id": department_id,
+            "title": title,
+            "mission_type": "task",
+            "workspace_type": workspace_type,
+            "required": required,
+        },
     )
-    assert match["status"] == "pending"
-    assert match["mission"]["workspace_type"] == "reflection"
-    return match["mission_id"]
+    assert res.status_code == 201, res.text
+    return res.json()["id"]
+
+
+# seed_data.py no longer seeds any demo Missions at all (removed along
+# with the rest of the placeholder demo content — see its own module
+# docstring), so this file creates the exact 3 titled missions it needs
+# itself. Titles matter, not just workspace_type: mission_scenarios.py/
+# mission_quizzes.py key their investigation/quiz content by exact
+# mission title, and MISSION_TITLE below is what makes the
+# investigation-grading tests further down actually resolve real
+# briefing/metrics/grading content instead of a 404.
+@pytest.fixture(scope="module")
+def mission_id(client, department_id):
+    return _create_mission(client, department_id, title=MISSION_TITLE, workspace_type="investigation", required=True)
 
 
 @pytest.fixture(scope="module")
-def quiz_mission_id(client, demo_employee_id):
-    bundle = client.get(f"/api/v1/onboarding/bundle/{demo_employee_id}").json()
-    match = next(
-        a for a in bundle["mission_assignments"] if a["mission"]["title"] == "Read the on-call handbook"
+def reflection_mission_id(client, department_id):
+    return _create_mission(client, department_id, title="Meet your onboarding buddy", workspace_type="reflection")
+
+
+@pytest.fixture(scope="module")
+def quiz_mission_id(client, department_id):
+    return _create_mission(client, department_id, title="Read the on-call handbook", workspace_type="quiz")
+
+
+@pytest.fixture(scope="module")
+def demo_employee_id(client, org_id, department_id, mission_id, reflection_mission_id, quiz_mission_id):
+    # A freshly-created employee, not the seeded demo identity — P2's
+    # Provisioning Boundary means mission_service.ensure_assignments_for_
+    # employee only ever runs once, at an employee's first bundle fetch
+    # (via onboarding_service.get_or_create_session); a Mission created
+    # after that point is never retroactively assigned. Depending on all
+    # 3 mission fixtures above forces them to exist before this
+    # employee's first bundle fetch below, so every mission this file
+    # needs actually lands in their mission_assignments. Named
+    # `demo_employee_id` (not renamed) purely so every test function
+    # below keeps working unchanged.
+    res = client.post(
+        "/api/v1/employees",
+        json={
+            "organization_id": org_id,
+            "department_id": department_id,
+            "full_name": "Mission Attempts Test Employee",
+            "email": "mission-attempts-test@kowri.test",
+        },
     )
-    assert match["mission"]["workspace_type"] == "quiz"
-    return match["mission_id"]
+    assert res.status_code == 201, res.text
+    employee_id = res.json()["id"]
+    client.get(f"/api/v1/onboarding/bundle/{employee_id}")  # provisions assignments
+    return employee_id
 
 
 @pytest.fixture(scope="module")
@@ -94,7 +139,7 @@ def unassigned_employee_id(client):
     # An employee whose bundle/session was never fetched — no
     # mission_assignments have been provisioned for them at all.
     employees = client.get("/api/v1/employees").json()
-    other = next(e for e in employees if e["email"] == "ama.asante@buddy.dev")
+    other = next(e for e in employees if e["email"] == "prince.amponsah@buddy.dev")
     return other["id"]
 
 
@@ -103,9 +148,9 @@ def assigned_but_not_started_employee_id(client):
     # Fetching the bundle provisions mission_assignments (ownership exists),
     # but no mission_attempt has been created for them yet.
     employees = client.get("/api/v1/employees").json()
-    david = next(e for e in employees if e["email"] == "david.owusu@buddy.dev")
-    client.get(f"/api/v1/onboarding/bundle/{david['id']}")  # provisions assignments
-    return david["id"]
+    philip = next(e for e in employees if e["email"] == "philip.aboagye@buddy.dev")
+    client.get(f"/api/v1/onboarding/bundle/{philip['id']}")  # provisions assignments
+    return philip["id"]
 
 
 # ---- scenario retrieval ----

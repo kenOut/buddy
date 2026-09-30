@@ -26,6 +26,7 @@
   --buddy-primary-dark: #049944;
   --buddy-accent: var(--buddy-sunrise);
   --buddy-muted: var(--buddy-text-secondary);
+  --buddy-overlay: rgb(29 29 31 / 0.4);
 }
 
 @theme inline {
@@ -48,6 +49,7 @@
   --color-buddy-surface: var(--buddy-surface);
   --color-buddy-border: var(--buddy-border);
   --color-buddy-muted: var(--buddy-muted);
+  --color-buddy-overlay: var(--buddy-overlay);
 
   --font-sans: var(--font-inter);
   --font-heading: var(--font-jakarta);

@@ -6,6 +6,7 @@ import { PersonCard } from "@/components/onboarding/PersonCard";
 import { EmployeeAvatarUpload } from "@/components/admin/EmployeeAvatarUpload";
 import { EmployeeStatusPill, SessionStatusPill } from "@/components/admin/StatusPill";
 import { EmployeeDevelopmentSnapshot } from "@/components/analytics/EmployeeDevelopmentSnapshot";
+import { ManagerPerformanceSection } from "@/components/admin/ManagerPerformanceSection";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import type { OnboardingBundle } from "@/lib/types";
@@ -100,6 +101,8 @@ export default async function EmployeeDetailPage({
       </div>
 
       <EmployeeDevelopmentSnapshot employeeId={employee.id} />
+
+      <ManagerPerformanceSection employeeId={employee.id} />
 
       <Card>
         <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-buddy-muted">

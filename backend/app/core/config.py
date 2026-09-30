@@ -63,7 +63,10 @@ class Settings(BaseSettings):
     # rejected and a real security antipattern where it isn't).
     cors_origins: str | None = None
 
-    demo_employee_email: str = "michael.mensah@buddy.dev"
+    # Points at Nelikem Agbanu (TechOps / Monitoring Engineer, Engineering)
+    # — the real Engineering Department Profile's roster replaced the
+    # original fictional Michael Mensah identity in seed_data.py.
+    demo_employee_email: str = "nelikem.agbanu@buddy.dev"
 
     # P5 — Production Security Hardening. Optional, comma-separated
     # list of Host header values this app will accept (wired to

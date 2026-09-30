@@ -47,10 +47,32 @@ QUIZ_ANSWERS = {
 
 @pytest.fixture(scope="module")
 def client():
+    # Reassigned here, not just once at module import time — this
+    # suite's own established fragility class (first diagnosed in
+    # P2.1, recurring in P3/P4.1/the Correction phase): every test file
+    # sets DATABASE_URL once at module top-level, but a module-scoped
+    # fixture doesn't actually execute until pytest gets around to its
+    # first test, by which point a later-collected file's own top-level
+    # assignment may have already overwritten it. Reasserting
+    # immediately before TestClient(...) triggers the real lifespan/
+    # seed guarantees this file runs against its own isolated database
+    # regardless of collection order.
+    os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{TEST_DB_PATH}"
     with TestClient(app) as c:
         c.post("/api/v1/admin/login", json={"password": get_settings().admin_password})
         yield c
     TEST_DB_PATH.unlink(missing_ok=True)
+
+
+@pytest.fixture(autouse=True)
+def _restore_database_url_after_each_test():
+    """Restore whatever DATABASE_URL was active before this file's
+    tests ran, so as not to leave a stale value for any test collected
+    after this file."""
+    original = os.environ.get("DATABASE_URL")
+    yield
+    if original is not None:
+        os.environ["DATABASE_URL"] = original
 
 
 @pytest.fixture(scope="module")
@@ -58,23 +80,67 @@ def demo_bundle(client):
     return client.get("/api/v1/onboarding/bundle/demo").json()
 
 
-@pytest.fixture(scope="module")
-def demo_employee_id(demo_bundle):
-    return demo_bundle["employee"]["id"]
-
-
 def _mission_id(bundle, title):
     return next(a for a in bundle["mission_assignments"] if a["mission"]["title"] == title)["mission_id"]
 
 
+# seed_data.py no longer seeds any demo Missions (see its own module
+# docstring), so this file creates the exact 2 titled missions it needs
+# itself — titles matter, not just workspace_type, since
+# mission_quizzes.py keys its quiz content by exact mission title.
 @pytest.fixture(scope="module")
-def reflection_mission_id(demo_bundle):
-    return _mission_id(demo_bundle, REFLECTION_TITLE)
+def reflection_mission_id(client, demo_bundle):
+    res = client.post(
+        "/api/v1/missions",
+        json={
+            "department_id": demo_bundle["employee"]["department_id"],
+            "title": REFLECTION_TITLE,
+            "mission_type": "task",
+            "workspace_type": "reflection",
+        },
+    )
+    assert res.status_code == 201, res.text
+    return res.json()["id"]
 
 
 @pytest.fixture(scope="module")
-def quiz_mission_id(demo_bundle):
-    return _mission_id(demo_bundle, QUIZ_TITLE)
+def quiz_mission_id(client, demo_bundle):
+    res = client.post(
+        "/api/v1/missions",
+        json={
+            "department_id": demo_bundle["employee"]["department_id"],
+            "title": QUIZ_TITLE,
+            "mission_type": "task",
+            "workspace_type": "quiz",
+        },
+    )
+    assert res.status_code == 201, res.text
+    return res.json()["id"]
+
+
+@pytest.fixture(scope="module")
+def demo_employee_id(client, demo_bundle, reflection_mission_id, quiz_mission_id):
+    # A freshly-created employee, not the literal seeded demo identity —
+    # P2's Provisioning Boundary means mission assignments are only ever
+    # provisioned once, at an employee's first bundle fetch; the real
+    # demo employee's session was already created (by `demo_bundle`
+    # above) before these missions existed. Depending on both mission
+    # fixtures forces them to exist before this employee's first bundle
+    # fetch below. Named `demo_employee_id` (not renamed) purely so the
+    # two tests using it below keep working unchanged.
+    res = client.post(
+        "/api/v1/employees",
+        json={
+            "organization_id": demo_bundle["employee"]["organization_id"],
+            "department_id": demo_bundle["employee"]["department_id"],
+            "full_name": "Mission Workspaces Demo Test Employee",
+            "email": "mission-workspaces-demo-test@kowri.test",
+        },
+    )
+    assert res.status_code == 201, res.text
+    employee_id = res.json()["id"]
+    client.get(f"/api/v1/onboarding/bundle/{employee_id}")  # provisions assignments
+    return employee_id
 
 
 # =====================================================================

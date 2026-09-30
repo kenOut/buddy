@@ -19,3 +19,17 @@ class Department(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     employees: Mapped[list["Employee"]] = relationship(back_populates="department")
     projects: Mapped[list["Project"]] = relationship(back_populates="department")
     missions: Mapped[list["Mission"]] = relationship(back_populates="department")
+    # Phase A — Team Entity & Department -> Team Foundation.
+    # `cascade="all, delete-orphan"` at the ORM level, on top of the
+    # `teams.department_id` FK's own `ondelete="CASCADE"` — the same
+    # reasoning Quest's own child relationships already established
+    # (see quest.py's docstring): SQLite, this project's dev/test
+    # database, never enforces FK pragmas, so a DB-level ON DELETE
+    # CASCADE alone silently does nothing there. Without this, deleting
+    # a Department via the ORM (the only way this app ever deletes
+    # anything) fails with a NOT NULL constraint error instead of
+    # cascading, since `Team.department_id` is non-nullable. No other
+    # Department relationship above has this — deliberately left
+    # unchanged, since this fix is scoped to the new Team relationship
+    # only.
+    teams: Mapped[list["Team"]] = relationship(back_populates="department", cascade="all, delete-orphan")

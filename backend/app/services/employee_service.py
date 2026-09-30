@@ -22,10 +22,18 @@ async def get_employee_by_email(db: AsyncSession, email: str) -> Employee | None
 
 
 async def get_teammates(db: AsyncSession, department_id: str, exclude_employee_id: str) -> list[Employee]:
+    """Excludes `status == "inactive"` — this never mattered before a
+    department could contain deactivated employees at all (every
+    Employee row was either "active" or "onboarding" until the
+    Engineering roster replacement introduced deactivate-in-place as a
+    real, populated state); without this, "Meet your team" would show
+    a mix of the current roster and whoever previously held those
+    department slots."""
     stmt = (
         select(Employee)
         .where(Employee.department_id == department_id)
         .where(Employee.id != exclude_employee_id)
+        .where(Employee.status != "inactive")
         .order_by(Employee.full_name)
     )
     result = await db.execute(stmt)

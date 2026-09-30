@@ -51,10 +51,32 @@ from app.main import app  # noqa: E402
 
 @pytest.fixture(scope="module")
 def client():
+    # Reassigned here, not just once at module import time — this
+    # suite's own established fragility class (first diagnosed in
+    # P2.1, recurring in P3/P4.1/the Correction phase): every test file
+    # sets DATABASE_URL once at module top-level, but a module-scoped
+    # fixture doesn't actually execute until pytest gets around to its
+    # first test, by which point a later-collected file's own top-level
+    # assignment may have already overwritten it. Reasserting
+    # immediately before TestClient(...) triggers the real lifespan/
+    # seed guarantees this file runs against its own isolated database
+    # regardless of collection order.
+    os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{TEST_DB_PATH}"
     with TestClient(app) as c:
         c.post("/api/v1/admin/login", json={"password": get_settings().admin_password})
         yield c
     TEST_DB_PATH.unlink(missing_ok=True)
+
+
+@pytest.fixture(autouse=True)
+def _restore_database_url_after_each_test():
+    """Restore whatever DATABASE_URL was active before this file's
+    tests ran, so as not to leave a stale value for any test collected
+    after this file."""
+    original = os.environ.get("DATABASE_URL")
+    yield
+    if original is not None:
+        os.environ["DATABASE_URL"] = original
 
 
 @pytest.fixture(scope="module")
@@ -93,14 +115,35 @@ def _new_employee_with_session(client, org_id, department_id, full_name, email):
 
 
 @pytest.fixture(scope="module")
-def employee_a(client, org_id, department_id):
+def department_mission_id(client, department_id):
+    # seed_data.py no longer seeds any demo Missions (see its own module
+    # docstring) — this file's employee fixtures below need at least one
+    # Mission to exist in the department BEFORE those employees'
+    # onboarding sessions are created, since mission assignments are
+    # only ever provisioned once, at an employee's first bundle fetch
+    # (P2 — Provisioning Boundary).
+    res = client.post(
+        "/api/v1/missions",
+        json={
+            "department_id": department_id,
+            "title": "P5.1 Test Mission",
+            "mission_type": "task",
+            "workspace_type": "reflection",
+        },
+    )
+    assert res.status_code == 201, res.text
+    return res.json()["id"]
+
+
+@pytest.fixture(scope="module")
+def employee_a(client, org_id, department_id, department_mission_id):
     return _new_employee_with_session(
         client, org_id, department_id, "P5.1 Test Employee A", "p51-test-a@kowri.test"
     )
 
 
 @pytest.fixture(scope="module")
-def employee_b(client, org_id, department_id):
+def employee_b(client, org_id, department_id, department_mission_id):
     return _new_employee_with_session(
         client, org_id, department_id, "P5.1 Test Employee B", "p51-test-b@kowri.test"
     )

@@ -9,12 +9,16 @@ export async function checkAdminSession(): Promise<boolean> {
   return status.authenticated;
 }
 
-export async function adminLogin(password: string): Promise<void> {
+/** `email` omitted (or blank) signs in with the original shared
+ * Manager Portal password; supplied, signs in as that specific
+ * stakeholder account instead (see backend AdminLoginRequest's own
+ * docstring) — both issue the same session. */
+export async function adminLogin(password: string, email?: string): Promise<void> {
   try {
-    await api.post<AdminSessionStatus>("/admin/login", { password });
+    await api.post<AdminSessionStatus>("/admin/login", email ? { email, password } : { password });
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {
-      throw new Error("Incorrect password.");
+      throw new Error(email ? "Incorrect email or password." : "Incorrect password.");
     }
     throw err;
   }

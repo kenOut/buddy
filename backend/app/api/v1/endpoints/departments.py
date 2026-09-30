@@ -3,12 +3,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.schemas.department import DepartmentCreate, DepartmentRead
+from app.schemas.team import TeamCreate, TeamRead
 from app.schemas.workspace_integration import (
     WorkspaceIntegrationCreate,
     WorkspaceIntegrationRead,
     WorkspaceIntegrationUpdate,
 )
-from app.services import department_service, workspace_integration_service
+from app.services import department_service, team_service, workspace_integration_service
+from app.services.team_service import DuplicateTeamError
 from app.services.workspace_integration_service import DuplicateWorkspaceIntegrationError
 
 router = APIRouter(prefix="/departments", tags=["departments"])
@@ -71,3 +73,20 @@ async def update_department_workspace(
             status_code=404, detail="This department has no workspace configured yet — create one first"
         )
     return await workspace_integration_service.update_integration(db, integration, payload)
+
+
+@router.get("/{department_id}/teams", response_model=list[TeamRead])
+async def list_department_teams(department_id: str, db: AsyncSession = Depends(get_db)):
+    await _get_owned_department(db, department_id)
+    return await team_service.list_teams_for_department(db, department_id)
+
+
+@router.post("/{department_id}/teams", response_model=TeamRead, status_code=201)
+async def create_department_team(
+    department_id: str, payload: TeamCreate, db: AsyncSession = Depends(get_db)
+):
+    await _get_owned_department(db, department_id)
+    try:
+        return await team_service.create_team(db, department_id, payload)
+    except DuplicateTeamError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

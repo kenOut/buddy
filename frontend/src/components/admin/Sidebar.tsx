@@ -13,6 +13,7 @@ const links = [
   { href: "/admin/missions", label: "Missions" },
   { href: "/admin/quests", label: "Quests" },
   { href: "/admin/analytics", label: "Analytics" },
+  { href: "/admin/settings", label: "Settings" },
 ];
 
 function NavLink({
@@ -56,7 +57,7 @@ export function Sidebar() {
   return (
     <>
       {/* Tablet and up: fixed left sidebar */}
-      <aside className="hidden w-56 shrink-0 flex-col gap-1 border-r border-buddy-border bg-buddy-surface p-4 sm:flex">
+      <aside className="hidden w-56 shrink-0 flex-col gap-1 border-r border-buddy-border bg-buddy-surface p-4 sm:sticky sm:top-0 sm:flex sm:h-dvh sm:self-start sm:overflow-y-auto">
         <Link href="/" className="mb-6 px-2 text-sm font-semibold tracking-tight text-buddy-primary">
           Buddy Admin
         </Link>

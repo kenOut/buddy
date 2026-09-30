@@ -52,13 +52,33 @@ def _provider(**overrides) -> SMTPEmailProvider:
 
 
 def test_selecting_smtp_without_config_fails_closed():
+    """Explicitly overrides every SMTP field to None rather than
+    relying on the ambient environment having none of them set — a
+    developer's local backend/.env legitimately carries real SMTP_HOST/
+    SMTP_USERNAME/SMTP_PASSWORD/EMAIL_FROM values for the manual Gmail
+    delivery test (README.md's "Email delivery" section), and
+    pydantic-settings would otherwise silently fill this Settings()
+    call in from that file, making this test pass or fail depending on
+    whichever developer's machine it runs on."""
     with pytest.raises(ValueError, match="EMAIL_PROVIDER=smtp requires"):
-        Settings(email_provider="smtp")
+        Settings(
+            email_provider="smtp",
+            smtp_host=None,
+            smtp_username=None,
+            smtp_password=None,
+            email_from=None,
+        )
 
 
 def test_selecting_smtp_without_config_names_every_missing_field():
     with pytest.raises(ValueError) as exc_info:
-        Settings(email_provider="smtp")
+        Settings(
+            email_provider="smtp",
+            smtp_host=None,
+            smtp_username=None,
+            smtp_password=None,
+            email_from=None,
+        )
     message = str(exc_info.value)
     for name in ("SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD", "EMAIL_FROM"):
         assert name in message
@@ -89,7 +109,8 @@ def test_smtp_config_error_never_contains_the_password_value():
             email_provider="smtp",
             smtp_host="smtp.gmail.com",
             smtp_username="test@gmail.com",
-            # smtp_password and email_from deliberately omitted
+            smtp_password=None,
+            email_from=None,
         )
     assert "a-fake-app-password-value" not in str(exc_info.value)
 
