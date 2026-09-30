@@ -238,12 +238,12 @@ export function InvestigationWorkspace({
           </Card>
 
           {saveError && (
-            <div role="alert" className="flex items-center justify-between gap-3 text-sm text-red-600">
+            <div role="alert" className="flex items-center justify-between gap-3 text-sm text-red-600 dark:text-red-400">
               <span>{saveError}</span>
               <button
                 type="button"
                 onClick={retrySave}
-                className="shrink-0 font-medium underline underline-offset-2 hover:text-red-700"
+                className="shrink-0 font-medium underline underline-offset-2 hover:text-red-700 dark:hover:text-red-400"
               >
                 Retry
               </button>
@@ -253,7 +253,7 @@ export function InvestigationWorkspace({
           {!isReadOnly && (
             <Card>
               {submitError && (
-                <p role="alert" className="mb-3 text-sm text-red-600">
+                <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">
                   {submitError}
                 </p>
               )}

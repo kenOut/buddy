@@ -127,7 +127,7 @@ export default function QuestLibraryPage() {
       </div>
 
       {error && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
           {error}
         </p>
       )}
@@ -245,7 +245,7 @@ export default function QuestLibraryPage() {
                             type="button"
                             disabled={busyId === quest.id}
                             onClick={() => handlePublish(quest.id)}
-                            className="text-xs font-medium text-emerald-700 hover:underline disabled:opacity-50"
+                            className="text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:underline disabled:opacity-50"
                           >
                             Publish
                           </button>
@@ -269,7 +269,7 @@ export default function QuestLibraryPage() {
                             type="button"
                             disabled={busyId === quest.id}
                             onClick={() => handleArchive(quest.id)}
-                            className="text-xs font-medium text-red-600 hover:underline disabled:opacity-50"
+                            className="text-xs font-medium text-red-600 dark:text-red-400 hover:underline disabled:opacity-50"
                           >
                             Archive
                           </button>

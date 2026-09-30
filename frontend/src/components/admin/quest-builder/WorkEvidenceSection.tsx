@@ -157,7 +157,7 @@ function TasksPanel({
       </div>
 
       {error && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
           {error}
         </p>
       )}
@@ -277,7 +277,7 @@ function TaskRow({
           <button
             type="button"
             onClick={onDelete}
-            className="rounded px-2 py-1 text-xs text-red-600 hover:underline"
+            className="rounded px-2 py-1 text-xs text-red-600 dark:text-red-400 hover:underline"
           >
             Delete
           </button>
@@ -394,7 +394,7 @@ function EvidencePanel({
       </div>
 
       {error && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
           {error}
         </p>
       )}
@@ -518,7 +518,7 @@ function EvidenceRow({
           <button
             type="button"
             onClick={onDelete}
-            className="rounded px-2 py-1 text-xs text-red-600 hover:underline"
+            className="rounded px-2 py-1 text-xs text-red-600 dark:text-red-400 hover:underline"
           >
             Delete
           </button>

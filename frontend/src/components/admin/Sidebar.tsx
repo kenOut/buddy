@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import clsx from "clsx";
 
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { adminLogout } from "@/lib/adminAuth";
 
 const links = [
@@ -58,9 +59,12 @@ export function Sidebar() {
     <>
       {/* Tablet and up: fixed left sidebar */}
       <aside className="hidden w-56 shrink-0 flex-col gap-1 border-r border-buddy-border bg-buddy-surface p-4 sm:sticky sm:top-0 sm:flex sm:h-dvh sm:self-start sm:overflow-y-auto">
-        <Link href="/" className="mb-6 px-2 text-sm font-semibold tracking-tight text-buddy-primary">
-          Buddy Admin
-        </Link>
+        <div className="mb-6 flex items-center justify-between">
+          <Link href="/" className="px-2 text-sm font-semibold tracking-tight text-buddy-primary">
+            Buddy Admin
+          </Link>
+          <ThemeToggle />
+        </div>
         {links.map((link) => (
           <NavLink key={link.href} href={link.href} label={link.label} active={isActive(link)} />
         ))}
@@ -78,9 +82,12 @@ export function Sidebar() {
           <Link href="/" className="text-sm font-semibold tracking-tight text-buddy-primary">
             Buddy Admin
           </Link>
-          <button onClick={handleLogout} className="text-sm font-medium text-buddy-muted hover:text-foreground">
-            Log out
-          </button>
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
+            <button onClick={handleLogout} className="text-sm font-medium text-buddy-muted hover:text-foreground">
+              Log out
+            </button>
+          </div>
         </div>
         <nav className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-0.5">
           {links.map((link) => (

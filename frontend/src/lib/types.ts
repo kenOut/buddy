@@ -119,6 +119,10 @@ export interface Mission {
   sort_order: number;
   required: boolean;
   workspace_type: MissionWorkspaceType;
+  /** Stage 2 — Performance-Aware Readiness. NULL means completion alone
+   * is enough; a real value means MissionAttempt.score must reach it
+   * for this Mission to count toward readiness. */
+  minimum_score: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -555,6 +559,10 @@ export interface QuestAssignment {
   role_id: string | null;
   active: boolean;
   required: boolean;
+  /** Stage 2 — Performance-Aware Readiness. NULL means completion alone
+   * is enough; a real value means QuestAttempt.score must reach it for
+   * this assignment to count toward readiness. */
+  minimum_score: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -654,6 +662,7 @@ export interface QuestAssignmentInput {
   department_id?: string | null;
   role_id?: string | null;
   required?: boolean;
+  minimum_score?: number | null;
 }
 
 // ---- Phase 6C: Adaptive Capability Loop ----
@@ -709,6 +718,16 @@ export interface EmployeeReadinessSummary {
   required_mission_count: number;
   completed_required_mission_count: number;
   remaining_required_mission_count: number;
+  /** Stage 2 — Performance-Aware Readiness. A completed required item
+   * that scored below its configured minimum_score still counts in
+   * `completed_required_*_count` above (completion and performance are
+   * different facts) — this is the one new signal that something
+   * finished but wasn't good enough. Aggregate only, deliberately: no
+   * per-item id/title/score is ever included here (Quest scores in
+   * particular are never shown to an employee anywhere in this system —
+   * see the manager-only ReadinessBlocker type for the structured,
+   * per-item view). */
+  required_items_below_threshold: number;
 }
 
 // ---- Phase 6D: Development Journey ----
@@ -970,6 +989,25 @@ export interface ManagerEmployeeInfo {
   team: string | null;
 }
 
+/** Stage 2 — Performance-Aware Readiness. Manager-safe and structured:
+ * real score/minimum_score values, so this type is only ever returned
+ * from the manager performance endpoint — never from the employee-safe
+ * readiness-summary (see EmployeeReadinessSummary above). */
+export type ReadinessBlockerType =
+  | "ONBOARDING_INCOMPLETE"
+  | "REQUIRED_MISSION_INCOMPLETE"
+  | "REQUIRED_MISSION_BELOW_THRESHOLD"
+  | "REQUIRED_QUEST_INCOMPLETE"
+  | "REQUIRED_QUEST_BELOW_THRESHOLD";
+
+export interface ReadinessBlocker {
+  type: ReadinessBlockerType;
+  item_id: string | null;
+  title: string;
+  score: number | null;
+  minimum_score: number | null;
+}
+
 export interface ManagerReadinessInfo {
   ready: boolean;
   onboarding_completed: boolean;
@@ -979,8 +1017,15 @@ export interface ManagerReadinessInfo {
   required_mission_count: number;
   completed_required_mission_count: number;
   remaining_required_mission_count: number;
-  blockers: string[];
+  required_items_below_threshold: number;
+  blockers: ReadinessBlocker[];
 }
+
+/** Stage 2 — `threshold_status` mirrors readiness_service's own
+ * RequiredItemState.satisfied predicate exactly; both this and
+ * `minimum_score` are null when the item isn't required at all (a
+ * threshold is only ever meaningful on a required item). */
+export type ThresholdStatus = "SATISFIED" | "BELOW_THRESHOLD" | "INCOMPLETE";
 
 export interface ManagerMissionPerformance {
   id: string;
@@ -992,6 +1037,8 @@ export interface ManagerMissionPerformance {
   passed: boolean | null;
   feedback: string | null;
   completed_at: string | null;
+  minimum_score: number | null;
+  threshold_status: ThresholdStatus | null;
 }
 
 export interface ManagerQuestPerformance {
@@ -1003,6 +1050,8 @@ export interface ManagerQuestPerformance {
   passed: boolean | null;
   feedback: string | null;
   completed_at: string | null;
+  minimum_score: number | null;
+  threshold_status: ThresholdStatus | null;
 }
 
 export interface ManagerCapabilitySummary {

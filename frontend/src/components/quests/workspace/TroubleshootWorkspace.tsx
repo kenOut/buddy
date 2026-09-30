@@ -193,12 +193,12 @@ function SaveIndicator({ saveState, onRetry }: { saveState: WorkspaceProps["save
       {saveState === "saving" && "Saving…"}
       {saveState === "saved" && "Saved"}
       {saveState === "error" && (
-        <span role="alert" className="flex items-center gap-2 text-red-600">
+        <span role="alert" className="flex items-center gap-2 text-red-600 dark:text-red-400">
           Save failed
           <button
             type="button"
             onClick={onRetry}
-            className="font-medium underline underline-offset-2 hover:text-red-700"
+            className="font-medium underline underline-offset-2 hover:text-red-700 dark:hover:text-red-400"
           >
             Retry
           </button>

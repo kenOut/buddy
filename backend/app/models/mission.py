@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -46,6 +46,27 @@ class Mission(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # opts it in — mirrors QuestAssignment.required's own default.
     required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # Stage 2 — Performance-Aware Readiness. NULL means "completion is
+    # sufficient" (the pre-Stage-2 behavior, preserved exactly for every
+    # existing Mission); a real value means the employee's MissionAttempt.
+    # score must reach it, not just exist, for this Mission to count
+    # toward readiness (see readiness_service.py's RequiredItemState).
+    # Lives on Mission itself, not MissionAssignment, for the identical
+    # reason `required` above does — no per-employee override exists or
+    # is needed for the same department-match provisioning reason.
+    # Deliberately NOT enforced against MissionAttempt.score's own range
+    # here (that's mission_scenarios.py/mission_quizzes.py's business);
+    # the schema layer enforces 0-100, matching every existing score
+    # field in this codebase (MissionAttempt.score, QuestAttempt.score,
+    # QuestEvaluationCriterion.max_score all already assume that range).
+    minimum_score: Mapped[float | None] = mapped_column(Numeric, nullable=True, default=None)
+
     project: Mapped["Project | None"] = relationship(back_populates="missions")
     department: Mapped["Department | None"] = relationship(back_populates="missions")
-    assignments: Mapped[list["MissionAssignment"]] = relationship(back_populates="mission")
+    # cascade: SQLite never enforces the `ondelete="CASCADE"` FK pragma in
+    # this project (see quest.py's children for the same reasoning), so
+    # deleting a Mission needs the ORM to clean up its (attempt-less,
+    # pure-tracking) assignment rows itself or they'd orphan silently.
+    assignments: Mapped[list["MissionAssignment"]] = relationship(
+        back_populates="mission", cascade="all, delete-orphan"
+    )

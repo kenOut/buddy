@@ -12,6 +12,19 @@ _TARGET_FIELD = {
 }
 
 
+def _valid_minimum_score(v: float | None) -> float | None:
+    """Shared by QuestAssignmentCreate/Update — NULL means "completion is
+    sufficient" (Stage 2's own documented semantics), never validated; a
+    real value must fall inside the same 0-100 range every existing
+    score field in this codebase already assumes (QuestAttempt.score,
+    MissionAttempt.score, QuestEvaluationCriterion.max_score)."""
+    if v is None:
+        return v
+    if not (0 <= v <= 100):
+        raise ValueError("minimum_score must be between 0 and 100")
+    return v
+
+
 class QuestAssignmentCreate(ORMBase):
     assignment_type: str
     employee_id: str | None = None
@@ -24,6 +37,9 @@ class QuestAssignmentCreate(ORMBase):
     # Defaults False so an assignment created without specifying this
     # stays optional, matching the column's own DB-level default.
     required: bool = False
+    # Stage 2 — Performance-Aware Readiness. See QuestAssignment.minimum_score's
+    # own model docstring for why this lives on the assignment, not the Quest.
+    minimum_score: float | None = None
 
     @field_validator("assignment_type")
     @classmethod
@@ -31,6 +47,11 @@ class QuestAssignmentCreate(ORMBase):
         if v not in ASSIGNMENT_TYPES:
             raise ValueError(f"assignment_type must be one of {ASSIGNMENT_TYPES}")
         return v
+
+    @field_validator("minimum_score")
+    @classmethod
+    def _check_minimum_score(cls, v: float | None) -> float | None:
+        return _valid_minimum_score(v)
 
     @model_validator(mode="after")
     def _exactly_one_matching_target(self) -> "QuestAssignmentCreate":
@@ -72,6 +93,12 @@ class QuestAssignmentUpdate(ORMBase):
 
     active: bool | None = None
     required: bool | None = None
+    minimum_score: float | None = None
+
+    @field_validator("minimum_score")
+    @classmethod
+    def _check_minimum_score(cls, v: float | None) -> float | None:
+        return _valid_minimum_score(v)
 
 
 class QuestAssignmentResponse(ORMBase):
@@ -83,6 +110,7 @@ class QuestAssignmentResponse(ORMBase):
     role_id: str | None
     active: bool
     required: bool
+    minimum_score: float | None
     created_at: datetime
     updated_at: datetime
 

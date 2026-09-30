@@ -1,4 +1,5 @@
-"""Manager Performance & Readiness Visibility — Stage 1.
+"""Manager Performance & Readiness Visibility — Stage 1, extended by
+Stage 2 (Performance-Aware Readiness).
 
 The manager-safe read model for "how is this employee actually
 performing," assembled entirely from data the system already computes
@@ -15,11 +16,18 @@ a scenario's correct_service/correct_cause, a quiz's correct_option, or
 any raw AI provider output — those types are never read by
 manager_performance_service.py at all. This is a manager-facing view of
 RESULTS, not of the answer keys that produced them.
+
+Stage 2 adds `minimum_score`/`threshold_status` per Mission/Quest row
+and upgrades `blockers` from plain strings to readiness_service's own
+structured `ReadinessBlocker` type — both sourced from
+readiness_service.required_quest_items/required_mission_items/
+get_readiness_blockers, never re-derived here (Stage 2 §8).
 """
 
 from datetime import datetime
 
 from app.schemas.common import ORMBase
+from app.schemas.readiness import ReadinessBlocker
 
 
 class ManagerEmployeeInfo(ORMBase):
@@ -33,13 +41,12 @@ class ManagerEmployeeInfo(ORMBase):
 
 
 class ManagerReadinessInfo(ORMBase):
-    """Exposes readiness_service.get_readiness_summary's existing fields
-    verbatim (ready/onboarding_completed/the six required-and-completed
-    counts) plus `blockers` — plain-language strings derived from the
-    same required-vs-completed id sets readiness_service already
-    computes and exposes publicly (required_eligible_quest_ids/
-    required_eligible_mission_ids), never a new eligibility or
-    completion rule invented for this endpoint."""
+    """Exposes readiness_service.get_readiness_summary's fields verbatim
+    (ready/onboarding_completed/the six required-and-completed counts,
+    plus Stage 2's `required_items_below_threshold`) alongside
+    `blockers` — readiness_service.get_readiness_blockers' own
+    structured output, never a second, independently-derived notion of
+    "why not ready" computed here."""
 
     ready: bool
     onboarding_completed: bool
@@ -52,7 +59,9 @@ class ManagerReadinessInfo(ORMBase):
     completed_required_mission_count: int
     remaining_required_mission_count: int
 
-    blockers: list[str]
+    required_items_below_threshold: int
+
+    blockers: list[ReadinessBlocker]
 
 
 class ManagerMissionPerformance(ORMBase):
@@ -72,6 +81,13 @@ class ManagerMissionPerformance(ORMBase):
     passed: bool | None
     feedback: str | None
     completed_at: datetime | None
+    # Stage 2 — Mission.minimum_score, and the same SATISFIED/
+    # BELOW_THRESHOLD/INCOMPLETE classification readiness_service's own
+    # RequiredItemState.satisfied uses. Both None when this Mission
+    # isn't required at all — a threshold is only ever meaningful on a
+    # required item.
+    minimum_score: float | None
+    threshold_status: str | None
 
 
 class ManagerQuestPerformance(ORMBase):
@@ -88,6 +104,13 @@ class ManagerQuestPerformance(ORMBase):
     passed: bool | None
     feedback: str | None
     completed_at: datetime | None
+    # Stage 2 — QuestAssignment.minimum_score (the strictest configured
+    # value, if the employee matches more than one required assignment
+    # on this Quest — see readiness_service.required_quest_items) and
+    # its SATISFIED/BELOW_THRESHOLD/INCOMPLETE classification. Both None
+    # when this Quest isn't required for this employee.
+    minimum_score: float | None
+    threshold_status: str | None
 
 
 class ManagerCapabilitySummary(ORMBase):
@@ -105,7 +128,9 @@ class ManagerPerformanceSummary(ORMBase):
     nothing here computes or triggers readiness). Genuinely unscored
     (score IS NULL) rows are excluded from both `scored_items` and the
     average, never coerced to 0 — an attempt nobody has evaluated is not
-    the same fact as one that scored zero."""
+    the same fact as one that scored zero. Unchanged by Stage 2: this
+    remains a plain average of whatever happens to be scored, never
+    consulted by readiness_service's per-item threshold predicate."""
 
     missions_assigned: int
     missions_completed: int

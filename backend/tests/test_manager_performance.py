@@ -526,8 +526,8 @@ def test_ready_employee(client, org_id, capability_ids):
 def test_readiness_blockers_returned(perf_response):
     blockers = perf_response["readiness"]["blockers"]
     assert blockers, "expected at least one blocker for a not-ready employee"
-    assert any("Diagnose the checkout latency spike" in b for b in blockers)
-    assert any("Onboarding" in b for b in blockers)
+    assert any(b["title"] == "Diagnose the checkout latency spike" for b in blockers)
+    assert any(b["type"] == "ONBOARDING_INCOMPLETE" for b in blockers)
 
 
 # =====================================================================

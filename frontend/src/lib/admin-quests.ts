@@ -135,7 +135,7 @@ export function createQuestAssignment(questId: string, payload: QuestAssignmentI
 export function updateQuestAssignment(
   questId: string,
   assignmentId: string,
-  patch: { active?: boolean; required?: boolean }
+  patch: { active?: boolean; required?: boolean; minimum_score?: number | null }
 ) {
   return api.patch<QuestAssignment>(`/quests/${q(questId)}/assignments/${q(assignmentId)}`, patch);
 }

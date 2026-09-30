@@ -2,10 +2,12 @@ import Link from "next/link";
 
 import { BuddyIllustration } from "@/components/buddy/BuddyIllustration";
 import { Button } from "@/components/ui/Button";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 export default function Home() {
   return (
     <main className="flex min-h-screen flex-1 flex-col items-center justify-center gap-8 px-6 text-center">
+      <ThemeToggle className="fixed right-4 top-4" />
       <div className="h-40 w-40">
         <BuddyIllustration state="welcome" className="h-full w-full" />
       </div>

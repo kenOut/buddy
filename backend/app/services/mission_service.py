@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Mission, MissionAssignment
+from app.models import Mission, MissionAssignment, MissionAttempt
 from app.schemas.mission import MissionCreate, MissionUpdate
 from app.services import mission_quizzes, mission_scenarios, readiness_service
 
@@ -18,6 +18,19 @@ class MissingWorkspaceContentError(Exception):
     through would create a Mission that 404s for every employee who
     opens it — caught here instead, at creation/update time, not
     discovered later by an employee."""
+
+
+class MissionHasAttemptsError(Exception):
+    """Raised when deleting a Mission that at least one employee has
+    already attempted. Mirrors the Employee "deactivate, never delete"
+    precedent in this codebase: MissionAttempt/CapabilityEvidence rows
+    are historical work product, and SQLite never enforces this
+    project's `ondelete="CASCADE"` FK pragmas (see mission.py's
+    `assignments` relationship comment), so a hard delete here would
+    either orphan that history or silently destroy it — neither is
+    acceptable. A Mission with no attempts yet (the realistic "remove a
+    stale/misconfigured mission" case) has nothing to protect and
+    deletes cleanly, cascading only its own MissionAssignment rows."""
 
 
 def _assert_workspace_content_exists(workspace_type: str, title: str) -> None:
@@ -63,6 +76,18 @@ async def update_mission(db: AsyncSession, mission: Mission, payload: MissionUpd
     await db.commit()
     await db.refresh(mission)
     return mission
+
+
+async def delete_mission(db: AsyncSession, mission: Mission) -> None:
+    attempt_count_result = await db.execute(
+        select(MissionAttempt.id).where(MissionAttempt.mission_id == mission.id).limit(1)
+    )
+    if attempt_count_result.scalar_one_or_none() is not None:
+        raise MissionHasAttemptsError(
+            "This mission has already been attempted by at least one employee and can't be deleted."
+        )
+    await db.delete(mission)
+    await db.commit()
 
 
 async def list_assignments_for_employee(db: AsyncSession, employee_id: str) -> list[MissionAssignment]:

@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* Manual, toggle-driven dark mode — not `prefers-color-scheme`. Activated
+ * by `[data-theme="dark"]` on <html> (set by ThemeProvider), so `dark:`
+ * utility classes respond to the user's explicit choice rather than
+ * their OS setting. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 :root {
   /* Buddy brand palette — remapped to Kowri's actual brand identity
    * (kowri.app): primary green #00B74F with a lime #A4D233 accent,
@@ -56,20 +62,50 @@
   --font-mono: var(--font-geist-mono);
 }
 
-/* Deliberately no `prefers-color-scheme: dark` override — this app
- * always renders on Kowri's white/light theme regardless of the
- * viewer's system preference. Several components (Badge tones, status
- * pills) use fixed Tailwind utility colors chosen for contrast against
- * a light background; auto-switching to a dark background without
- * auditing every one of those would silently break legibility (as it
- * did here: --buddy-navy, used for every heading, was never given a
- * dark-mode value, so heading text rendered near-black on a near-black
- * background for anyone with a dark-mode system). */
+/* Dark theme — opt-in via ThemeProvider (localStorage + a toggle), not
+ * `prefers-color-scheme`. Every `bg-buddy-*`/`text-buddy-*`/`bg-background`/
+ * `text-foreground` class across the app repaints for free since they're
+ * all CSS variables redefined here; the one-off hardcoded Tailwind
+ * palette colors used for status text (error/success/warning — Badge,
+ * form validation, quest-builder panels) were separately audited and
+ * given explicit `dark:` variants at each call site, since a plain
+ * `emerald-700`/`red-600`/`amber-700` reads fine on white but loses
+ * contrast on a dark surface. This is the earlier gap that made this
+ * app light-only in the first place (--buddy-navy had no dark value, so
+ * headings rendered near-black on near-black) — fixed by giving every
+ * token below a real dark counterpart instead of leaving any unset.
+ */
+[data-theme="dark"] {
+  --buddy-navy: #f5f5f7;
+  --buddy-cyan: #22d56f;
+  --buddy-aurora: #b8e457;
+  --buddy-sunrise: #f4b95c;
+  --buddy-coral: #ff8080;
+  --buddy-cloud: #131417;
+  --buddy-surface: #1c1d20;
+  --buddy-text-primary: #f5f5f7;
+  --buddy-text-secondary: #a1a1a6;
+  --buddy-border: #303136;
+
+  --background: #131417;
+  --foreground: var(--buddy-text-primary);
+
+  --buddy-primary: var(--buddy-cyan);
+  --buddy-primary-dark: #7ce8a4;
+  --buddy-accent: var(--buddy-sunrise);
+  --buddy-muted: var(--buddy-text-secondary);
+  --buddy-overlay: rgb(0 0 0 / 0.6);
+}
 
 html {
-  /* Keeps native form controls (select dropdowns, scrollbars) light
-   * regardless of system preference, matching the rest of the page. */
+  /* Base is light; the dark block below flips it per-theme so native
+   * form controls (selects, scrollbars) match whichever theme is active
+   * instead of always following system preference. */
   color-scheme: light;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 body {

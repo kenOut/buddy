@@ -9,6 +9,11 @@ class DepartmentCreate(ORMBase):
     description: str | None = None
 
 
+class DepartmentUpdate(ORMBase):
+    name: str | None = None
+    description: str | None = None
+
+
 class DepartmentRead(ORMBase):
     id: str
     organization_id: str

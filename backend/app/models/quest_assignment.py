@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, String, text
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, Numeric, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -96,6 +96,18 @@ class QuestAssignment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # existing assignment stays non-required until a manager opts one in
     # — no existing quest becomes required automatically.
     required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Stage 2 — Performance-Aware Readiness. NULL means "completion is
+    # sufficient" (the pre-Stage-2 behavior, preserved exactly for every
+    # existing assignment); a real value means the employee's
+    # QuestAttempt.score must reach it, not just exist, for this
+    # assignment to count toward readiness. Lives here rather than on
+    # Quest itself deliberately: the same Quest can be assigned to
+    # multiple targets (an EMPLOYEE assignment and a DEPARTMENT
+    # assignment on the same Quest, for instance) with different
+    # performance bars for each, exactly the same reasoning `required`
+    # above already established for this column's placement.
+    minimum_score: Mapped[float | None] = mapped_column(Numeric, nullable=True, default=None)
 
     quest: Mapped["Quest"] = relationship(back_populates="assignments")
     employee: Mapped["Employee | None"] = relationship()

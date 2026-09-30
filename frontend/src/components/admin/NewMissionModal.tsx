@@ -17,20 +17,29 @@ const WORKSPACE_TYPES: { value: MissionWorkspaceType; label: string }[] = [
 
 export function NewMissionModal({
   departments,
+  mission,
   onClose,
   onCreated,
 }: {
   departments: Department[];
+  /** Present -> edit that Mission (PATCH) instead of creating a new one. */
+  mission?: Mission;
   onClose: () => void;
   onCreated: (mission: Mission) => void;
 }) {
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [departmentId, setDepartmentId] = useState(departments[0]?.id ?? "");
-  const [missionType, setMissionType] = useState<MissionType>("task");
-  const [workspaceType, setWorkspaceType] = useState<MissionWorkspaceType>("reflection");
-  const [estimatedMinutes, setEstimatedMinutes] = useState(15);
-  const [required, setRequired] = useState(false);
+  const isEdit = mission != null;
+  const [title, setTitle] = useState(mission?.title ?? "");
+  const [description, setDescription] = useState(mission?.description ?? "");
+  const [departmentId, setDepartmentId] = useState(mission?.department_id ?? departments[0]?.id ?? "");
+  const [missionType, setMissionType] = useState<MissionType>(mission?.mission_type ?? "task");
+  const [workspaceType, setWorkspaceType] = useState<MissionWorkspaceType>(
+    mission?.workspace_type ?? "reflection",
+  );
+  const [estimatedMinutes, setEstimatedMinutes] = useState(mission?.estimated_minutes ?? 15);
+  const [required, setRequired] = useState(mission?.required ?? false);
+  const [minimumScore, setMinimumScore] = useState(
+    mission?.minimum_score != null ? String(mission.minimum_score) : "",
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,20 +74,24 @@ export function NewMissionModal({
     e.preventDefault();
     setError(null);
     setSubmitting(true);
+    const payload = {
+      department_id: departmentId || null,
+      title: title.trim(),
+      description: description.trim() || null,
+      mission_type: missionType,
+      estimated_minutes: estimatedMinutes,
+      required,
+      workspace_type: workspaceType,
+      minimum_score: required && minimumScore.trim() ? Number(minimumScore) : null,
+    };
     try {
-      const mission = await api.post<Mission>("/missions", {
-        department_id: departmentId || null,
-        title: title.trim(),
-        description: description.trim() || null,
-        mission_type: missionType,
-        estimated_minutes: estimatedMinutes,
-        required,
-        workspace_type: workspaceType,
-      });
-      onCreated(mission);
+      const saved = isEdit
+        ? await api.patch<Mission>(`/missions/${mission!.id}`, payload)
+        : await api.post<Mission>("/missions", payload);
+      onCreated(saved);
       onClose();
     } catch {
-      setError("Couldn't create the mission. Try again.");
+      setError(isEdit ? "Couldn't save changes. Try again." : "Couldn't create the mission. Try again.");
     } finally {
       setSubmitting(false);
     }
@@ -93,9 +106,13 @@ export function NewMissionModal({
         <Card>
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-lg font-semibold text-foreground">New mission</h2>
+              <h2 className="text-lg font-semibold text-foreground">
+                {isEdit ? "Edit mission" : "New mission"}
+              </h2>
               <p className="mt-1 text-sm text-buddy-muted">
-                Add an onboarding task for a department&rsquo;s new hires.
+                {isEdit
+                  ? "Update this onboarding task."
+                  : "Add an onboarding task for a department’s new hires."}
               </p>
             </div>
             <button
@@ -241,7 +258,10 @@ export function NewMissionModal({
               <input
                 type="checkbox"
                 checked={required}
-                onChange={(e) => setRequired(e.target.checked)}
+                onChange={(e) => {
+                  setRequired(e.target.checked);
+                  if (!e.target.checked) setMinimumScore("");
+                }}
                 className="mt-0.5"
               />
               <span>
@@ -253,6 +273,28 @@ export function NewMissionModal({
               </span>
             </label>
 
+            {required && (
+              <div className="space-y-1.5 pl-6">
+                <label htmlFor="mission-minimum-score" className="text-sm font-medium text-foreground">
+                  Minimum score <span className="text-buddy-muted">(optional)</span>
+                </label>
+                <input
+                  id="mission-minimum-score"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={minimumScore}
+                  onChange={(e) => setMinimumScore(e.target.value)}
+                  placeholder="e.g. 80"
+                  className="w-full rounded-lg border border-buddy-border bg-buddy-surface px-3 py-2 text-sm focus:border-buddy-primary focus:outline-none"
+                />
+                <p className="text-xs text-buddy-muted">
+                  Leave blank to require only completion. Set a score and an employee must reach it
+                  &mdash; not just finish the mission &mdash; to count toward readiness.
+                </p>
+              </div>
+            )}
+
             {error && <p className="text-sm text-buddy-coral">{error}</p>}
 
             <div className="flex justify-end gap-2 pt-2">
@@ -260,7 +302,7 @@ export function NewMissionModal({
                 Cancel
               </Button>
               <Button type="submit" disabled={submitting || !title.trim() || !departmentId}>
-                {submitting ? "Creating…" : "Create mission"}
+                {submitting ? "Saving…" : isEdit ? "Save changes" : "Create mission"}
               </Button>
             </div>
           </form>

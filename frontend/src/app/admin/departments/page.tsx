@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
+import { ConfirmDialog } from "@/components/admin/ConfirmDialog";
 import { NewDepartmentModal } from "@/components/admin/NewDepartmentModal";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import type { Department, Employee, Organization } from "@/lib/types";
 
 export default function DepartmentsPage() {
@@ -17,6 +18,10 @@ export default function DepartmentsPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [showNewDepartment, setShowNewDepartment] = useState(false);
+  const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
+  const [deletingDepartment, setDeletingDepartment] = useState<Department | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +79,29 @@ export default function DepartmentsPage() {
     return map;
   }, [employees]);
 
+  async function handleDelete() {
+    if (!deletingDepartment) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/departments/${deletingDepartment.id}`);
+      setDepartments((prev) => prev.filter((d) => d.id !== deletingDepartment.id));
+      setDeletingDepartment(null);
+      setDeleteError(null);
+    } catch (err) {
+      // A 409 here means the department still has employees assigned to
+      // it (see department_service.DepartmentHasEmployeesError) —
+      // surfaced verbatim since it already explains the fix (move them
+      // out first), rather than a generic failure message.
+      setDeleteError(
+        err instanceof ApiError && err.status === 409
+          ? "This department still has employees assigned to it. Move them to another department before deleting it."
+          : "Couldn't delete the department. Try again.",
+      );
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return departments
@@ -127,6 +155,17 @@ export default function DepartmentsPage() {
         />
       )}
 
+      {editingDepartment && organizationId && (
+        <NewDepartmentModal
+          organizationId={organizationId}
+          department={editingDepartment}
+          onClose={() => setEditingDepartment(null)}
+          onCreated={(department) =>
+            setDepartments((prev) => prev.map((d) => (d.id === department.id ? department : d)))
+          }
+        />
+      )}
+
       {error ? (
         <div role="alert" className="flex items-center justify-between gap-4 rounded-xl border border-buddy-coral/30 bg-buddy-coral/10 px-4 py-3 text-sm">
           <span className="text-buddy-coral">{error}</span>
@@ -154,12 +193,14 @@ export default function DepartmentsPage() {
           {visible.map((department) => {
             const headcount = headcountById.get(department.id) ?? 0;
             return (
-              <Link
+              <Card
                 key={department.id}
-                href={`/admin/departments/${department.id}`}
-                className="group block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-buddy-primary/60"
+                className="group flex h-full flex-col p-0 transition-all duration-200 hover:-translate-y-0.5 hover:border-buddy-primary/50 hover:shadow-lg hover:shadow-buddy-primary/5"
               >
-                <Card className="h-full transition-all duration-200 group-hover:-translate-y-0.5 group-hover:border-buddy-primary/50 group-hover:shadow-lg group-hover:shadow-buddy-primary/5">
+                <Link
+                  href={`/admin/departments/${department.id}`}
+                  className="block flex-1 p-6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-buddy-primary/60"
+                >
                   <div className="flex items-start justify-between gap-3">
                     <Avatar name={department.name} />
                     <span aria-hidden className="text-buddy-muted transition-transform group-hover:translate-x-0.5 group-hover:text-buddy-primary">→</span>
@@ -171,12 +212,44 @@ export default function DepartmentsPage() {
                   <p className="mt-3 text-xs uppercase tracking-wide text-buddy-muted">
                     {headcount} {headcount === 1 ? "employee" : "employees"}
                   </p>
-                </Card>
-              </Link>
+                </Link>
+                <div className="flex gap-2 border-t border-buddy-border px-6 py-3">
+                  <Button variant="secondary" size="sm" onClick={() => setEditingDepartment(department)}>
+                    Edit
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={() => {
+                      setDeleteError(null);
+                      setDeletingDepartment(department);
+                    }}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              </Card>
             );
           })}
         </div>
       )}
+
+      <ConfirmDialog
+        open={deletingDepartment !== null}
+        title={`Delete ${deletingDepartment?.name ?? "department"}?`}
+        description={
+          deleteError ??
+          "This can't be undone. Its roles, teams, projects, and workspace connection go with it; any missions and quests it owns are kept but unassigned from it."
+        }
+        confirmLabel="Delete"
+        tone="danger"
+        busy={deleting}
+        onCancel={() => {
+          setDeletingDepartment(null);
+          setDeleteError(null);
+        }}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }

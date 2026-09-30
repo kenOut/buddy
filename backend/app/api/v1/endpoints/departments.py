@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
-from app.schemas.department import DepartmentCreate, DepartmentRead
+from app.schemas.department import DepartmentCreate, DepartmentRead, DepartmentUpdate
 from app.schemas.team import TeamCreate, TeamRead
 from app.schemas.workspace_integration import (
     WorkspaceIntegrationCreate,
@@ -10,6 +10,7 @@ from app.schemas.workspace_integration import (
     WorkspaceIntegrationUpdate,
 )
 from app.services import department_service, team_service, workspace_integration_service
+from app.services.department_service import DepartmentHasEmployeesError
 from app.services.team_service import DuplicateTeamError
 from app.services.workspace_integration_service import DuplicateWorkspaceIntegrationError
 
@@ -39,6 +40,21 @@ async def _get_owned_department(db: AsyncSession, department_id: str):
     if department is None:
         raise HTTPException(status_code=404, detail="Department not found")
     return department
+
+
+@router.patch("/{department_id}", response_model=DepartmentRead)
+async def update_department(department_id: str, payload: DepartmentUpdate, db: AsyncSession = Depends(get_db)):
+    department = await _get_owned_department(db, department_id)
+    return await department_service.update_department(db, department, payload)
+
+
+@router.delete("/{department_id}", status_code=204)
+async def delete_department(department_id: str, db: AsyncSession = Depends(get_db)):
+    department = await _get_owned_department(db, department_id)
+    try:
+        await department_service.delete_department(db, department)
+    except DepartmentHasEmployeesError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/{department_id}/workspace", response_model=WorkspaceIntegrationRead | None)

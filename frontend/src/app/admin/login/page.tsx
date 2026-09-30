@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { adminLogin } from "@/lib/adminAuth";
 
 export default function AdminLoginPage() {
@@ -30,6 +31,7 @@ export default function AdminLoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-buddy-cloud px-4">
+      <ThemeToggle className="fixed right-4 top-4" />
       <Card className="w-full max-w-sm space-y-6">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Buddy Admin</h1>

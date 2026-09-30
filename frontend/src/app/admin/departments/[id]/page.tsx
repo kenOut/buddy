@@ -2,18 +2,22 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 
+import { ConfirmDialog } from "@/components/admin/ConfirmDialog";
+import { NewDepartmentModal } from "@/components/admin/NewDepartmentModal";
 import { WorkspaceIntegrationSection } from "@/components/admin/WorkspaceIntegrationSection";
 import { Avatar } from "@/components/ui/Avatar";
+import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import type { Department, Employee } from "@/lib/types";
 
 export default function DepartmentDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const departmentId = params.id;
 
   const [department, setDepartment] = useState<Department | null>(null);
@@ -21,6 +25,10 @@ export default function DepartmentDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [teamQuery, setTeamQuery] = useState("");
   const [showAll, setShowAll] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [prevDepartmentId, setPrevDepartmentId] = useState(departmentId);
   if (departmentId !== prevDepartmentId) {
@@ -78,6 +86,22 @@ export default function DepartmentDetailPage() {
   );
   const shown = showAll || teamQuery ? filtered : filtered.slice(0, 8);
 
+  async function handleDelete() {
+    if (!department) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/departments/${department.id}`);
+      router.push("/admin/departments");
+    } catch (err) {
+      setDeleteError(
+        err instanceof ApiError && err.status === 409
+          ? "This department still has employees assigned to it. Move them to another department before deleting it."
+          : "Couldn't delete the department. Try again.",
+      );
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <nav aria-label="Breadcrumb" className="text-sm text-buddy-muted">
@@ -86,16 +110,33 @@ export default function DepartmentDetailPage() {
         <span className="text-foreground">{department.name}</span>
       </nav>
 
-      <div className="flex items-start gap-4">
-        <Avatar name={department.name} />
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">{department.name}</h1>
-          {department.description && (
-            <p className="mt-1 max-w-2xl text-sm text-buddy-muted">{department.description}</p>
-          )}
-          <span className="mt-2 inline-flex rounded-full bg-buddy-primary/10 px-2.5 py-0.5 text-xs font-medium text-buddy-primary">
-            {employees.length} {employees.length === 1 ? "employee" : "employees"}
-          </span>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex items-start gap-4">
+          <Avatar name={department.name} />
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold tracking-tight">{department.name}</h1>
+            {department.description && (
+              <p className="mt-1 max-w-2xl text-sm text-buddy-muted">{department.description}</p>
+            )}
+            <span className="mt-2 inline-flex rounded-full bg-buddy-primary/10 px-2.5 py-0.5 text-xs font-medium text-buddy-primary">
+              {employees.length} {employees.length === 1 ? "employee" : "employees"}
+            </span>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setShowEdit(true)}>
+            Edit
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => {
+              setDeleteError(null);
+              setConfirmingDelete(true);
+            }}
+          >
+            Delete
+          </Button>
         </div>
       </div>
 
@@ -145,6 +186,32 @@ export default function DepartmentDetailPage() {
           )}
         </Card>
       </div>
+
+      {showEdit && (
+        <NewDepartmentModal
+          organizationId={department.organization_id}
+          department={department}
+          onClose={() => setShowEdit(false)}
+          onCreated={(updated) => setDepartment(updated)}
+        />
+      )}
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        title={`Delete ${department.name}?`}
+        description={
+          deleteError ??
+          "This can't be undone. Its roles, teams, projects, and workspace connection go with it; any missions and quests it owns are kept but unassigned from it."
+        }
+        confirmLabel="Delete"
+        tone="danger"
+        busy={deleting}
+        onCancel={() => {
+          setConfirmingDelete(false);
+          setDeleteError(null);
+        }}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }

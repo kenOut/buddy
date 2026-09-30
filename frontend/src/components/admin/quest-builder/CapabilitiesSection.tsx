@@ -58,13 +58,13 @@ export function CapabilitiesSection({
       </div>
 
       {error && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
           {error}
         </p>
       )}
 
       {quest.capabilities.length === 0 && (
-        <p className="text-xs text-amber-700">No capabilities mapped yet.</p>
+        <p className="text-xs text-amber-700 dark:text-amber-400">No capabilities mapped yet.</p>
       )}
 
       <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">

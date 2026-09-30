@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist_Mono, Inter, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
+import { ThemeProvider, THEME_INIT_SCRIPT } from "@/lib/theme-context";
+
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
@@ -31,7 +33,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
-        {children}
+        {/* Blocking, runs before paint — sets data-theme on <html> ahead of
+         * hydration so there's no flash of the wrong theme. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
   );

@@ -155,7 +155,7 @@ function DemoResetControl({ onReset }: { onReset: () => Promise<void> }) {
         Reset demo
       </button>
       {phase === "error" && (
-        <p role="alert" className="text-xs text-red-600">
+        <p role="alert" className="text-xs text-red-600 dark:text-red-400">
           Couldn&rsquo;t reset the demo. Please try again.
         </p>
       )}

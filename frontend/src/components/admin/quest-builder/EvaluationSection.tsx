@@ -107,7 +107,7 @@ export function EvaluationSection({
       </div>
 
       {error && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
           {error}
         </p>
       )}
@@ -156,8 +156,8 @@ export function EvaluationSection({
             <p className="mt-1 text-xs text-buddy-muted">{CRITERION_HELP[criterionType]}</p>
           </div>
 
-          <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-3">
-            <p className="text-xs font-semibold text-amber-900">
+          <div className="rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3 space-y-3">
+            <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
               🔒 Evaluator-only — hidden from every employee view
             </p>
             {criterionType === "DETERMINISTIC" && (
@@ -242,14 +242,14 @@ function CriterionRow({
           <button
             type="button"
             onClick={onDelete}
-            className="shrink-0 rounded px-2 py-1 text-xs text-red-600 hover:underline"
+            className="shrink-0 rounded px-2 py-1 text-xs text-red-600 dark:text-red-400 hover:underline"
           >
             Delete
           </button>
         )}
       </div>
       {hiddenValue && (
-        <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <div className="rounded-lg bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
           🔒 Evaluator-only: {hiddenValue}
         </div>
       )}

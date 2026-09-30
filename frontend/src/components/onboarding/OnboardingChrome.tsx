@@ -7,6 +7,7 @@ import { SceneTransition } from "@/components/animations/SceneTransition";
 import { ProgressIndicator } from "@/components/onboarding/ProgressIndicator";
 import { ReadinessStatus } from "@/components/onboarding/ReadinessStatus";
 import { Button } from "@/components/ui/Button";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { useOnboarding } from "@/lib/onboarding-context";
 
 export function OnboardingChrome({ children }: { children: React.ReactNode }) {
@@ -54,6 +55,7 @@ export function OnboardingChrome({ children }: { children: React.ReactNode }) {
         <div className="flex items-center gap-3">
           <ReadinessStatus />
           <span className="text-xs text-buddy-muted">{bundle.organization.name}</span>
+          <ThemeToggle />
         </div>
       </header>
 

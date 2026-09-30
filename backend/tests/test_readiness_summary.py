@@ -222,6 +222,7 @@ def test_onboarding_complete_zero_required_quests(client, employee):
         "required_mission_count": 0,
         "completed_required_mission_count": 0,
         "remaining_required_mission_count": 0,
+        "required_items_below_threshold": 0,
     }
     _assert_agrees_with_trigger(employee["id"], summary)
 
@@ -515,4 +516,5 @@ def test_response_has_no_extra_or_internal_fields(client, employee):
         "required_mission_count",
         "completed_required_mission_count",
         "remaining_required_mission_count",
+        "required_items_below_threshold",
     }

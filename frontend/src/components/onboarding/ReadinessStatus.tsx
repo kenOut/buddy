@@ -85,6 +85,14 @@ export function ReadinessStatus() {
   if (!bundle || failed || !summary || totalRequired === 0) return null;
 
   const noun = requiredNoun(summary);
+  // Stage 2 — an aggregate-only signal (see EmployeeReadinessSummary's
+  // own docstring for why this is a count, never a per-item score):
+  // a required item can be "complete" above and still be the reason
+  // `ready` is false, if it didn't meet its configured minimum score.
+  // `summary.ready` itself already reflects that server-side; this line
+  // just explains it, rather than leaving "not ready" unexplained when
+  // every required item otherwise looks complete.
+  const belowThreshold = summary.required_items_below_threshold;
 
   return (
     <div
@@ -106,6 +114,8 @@ export function ReadinessStatus() {
       ) : (
         <span>
           {totalCompleted} of {totalRequired} required {noun} complete
+          {belowThreshold > 0 &&
+            ` — ${belowThreshold} below performance threshold`}
         </span>
       )}
     </div>

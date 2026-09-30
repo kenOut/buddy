@@ -39,7 +39,7 @@ export function QuestReview({
             {requiredTasks.map((task) => {
               const done = completedIds.has(task.id);
               return (
-                <li key={task.id} className={done ? "text-emerald-700" : "text-red-600"}>
+                <li key={task.id} className={done ? "text-emerald-700 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}>
                   <span aria-hidden="true">{done ? "✓ " : "○ "}</span>
                   {task.title}
                   {!done && <span className="sr-only"> — not yet completed</span>}
@@ -51,7 +51,7 @@ export function QuestReview({
       )}
 
       {submitError && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
           {submitError}
         </p>
       )}

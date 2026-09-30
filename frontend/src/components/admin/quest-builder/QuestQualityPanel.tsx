@@ -56,7 +56,7 @@ export function QuestQualityPanel({
         ))}
       </ul>
       {validation.ready ? (
-        <p className="text-sm text-emerald-700">
+        <p className="text-sm text-emerald-700 dark:text-emerald-400">
           Ready to publish — every required check has passed.
         </p>
       ) : (
@@ -78,10 +78,10 @@ function QualityRow({
 }) {
   const icon = check.satisfied ? "✓" : check.severity === "ERROR" ? "✕" : "⚠";
   const iconColor = check.satisfied
-    ? "text-emerald-600"
+    ? "text-emerald-600 dark:text-emerald-400"
     : check.severity === "ERROR"
-      ? "text-red-600"
-      : "text-amber-600";
+      ? "text-red-600 dark:text-red-400"
+      : "text-amber-600 dark:text-amber-400";
   const textColor = check.satisfied ? "text-foreground" : "text-buddy-text-secondary";
 
   return (

@@ -79,7 +79,7 @@ export function DevelopmentJourneyScene() {
 
       {state.phase === "error" && (
         <Card>
-          <p role="alert" className="text-sm text-red-600">
+          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
             {state.message}
           </p>
           <Button className="mt-3" onClick={() => setRetryTick((n) => n + 1)}>

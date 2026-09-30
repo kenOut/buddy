@@ -45,7 +45,7 @@ export function QuestProgressSteps({
               active
                 ? "bg-buddy-primary text-white"
                 : done
-                  ? "bg-buddy-aurora/15 text-emerald-700"
+                  ? "bg-buddy-aurora/15 text-emerald-700 dark:text-emerald-400"
                   : "bg-buddy-border/40 text-buddy-muted",
               !reachable && "cursor-not-allowed opacity-60"
             )}

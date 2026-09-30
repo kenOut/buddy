@@ -2,17 +2,22 @@
 
 import { useEffect, useState } from "react";
 
+import { ConfirmDialog } from "@/components/admin/ConfirmDialog";
 import { NewMissionModal } from "@/components/admin/NewMissionModal";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import type { Department, Mission } from "@/lib/types";
 
 export default function MissionsPage() {
   const [missions, setMissions] = useState<Mission[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [showNewMission, setShowNewMission] = useState(false);
+  const [editingMission, setEditingMission] = useState<Mission | null>(null);
+  const [deletingMission, setDeletingMission] = useState<Mission | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     api.get<Mission[]>("/missions").then(setMissions);
@@ -21,6 +26,29 @@ export default function MissionsPage() {
 
   const departmentName = (id: string | null) =>
     departments.find((d) => d.id === id)?.name ?? "—";
+
+  async function handleDelete() {
+    if (!deletingMission) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/missions/${deletingMission.id}`);
+      setMissions((prev) => prev.filter((m) => m.id !== deletingMission.id));
+      setDeletingMission(null);
+      setDeleteError(null);
+    } catch (err) {
+      // A 409 here means the mission already has employee attempts on it
+      // (see mission_service.MissionHasAttemptsError) — surfaced verbatim
+      // since the backend message already explains why deletion is
+      // blocked, rather than a generic failure message hiding the reason.
+      setDeleteError(
+        err instanceof ApiError && err.status === 409
+          ? "This mission has already been attempted by at least one employee and can't be deleted."
+          : "Couldn't delete the mission. Try again.",
+      );
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -44,6 +72,17 @@ export default function MissionsPage() {
         />
       )}
 
+      {editingMission && (
+        <NewMissionModal
+          departments={departments}
+          mission={editingMission}
+          onClose={() => setEditingMission(null)}
+          onCreated={(mission) =>
+            setMissions((prev) => prev.map((m) => (m.id === mission.id ? mission : m)))
+          }
+        />
+      )}
+
       <Card className="p-0">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-left text-sm">
@@ -55,6 +94,7 @@ export default function MissionsPage() {
                 <th className="px-6 py-3">Department</th>
                 <th className="px-6 py-3">Est. time</th>
                 <th className="px-6 py-3">Readiness</th>
+                <th className="px-6 py-3">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -86,12 +126,45 @@ export default function MissionsPage() {
                         <span className="text-buddy-muted">Optional</span>
                       )}
                     </td>
+                    <td className="px-6 py-3">
+                      <div className="flex gap-2">
+                        <Button variant="secondary" size="sm" onClick={() => setEditingMission(mission)}>
+                          Edit
+                        </Button>
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          onClick={() => {
+                            setDeleteError(null);
+                            setDeletingMission(mission);
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
             </tbody>
           </table>
         </div>
       </Card>
+
+      <ConfirmDialog
+        open={deletingMission !== null}
+        title={`Delete ${deletingMission?.title ?? "mission"}?`}
+        description={
+          deleteError ?? "This can't be undone. Employees who haven't started it will no longer see it."
+        }
+        confirmLabel="Delete"
+        tone="danger"
+        busy={deleting}
+        onCancel={() => {
+          setDeletingMission(null);
+          setDeleteError(null);
+        }}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }

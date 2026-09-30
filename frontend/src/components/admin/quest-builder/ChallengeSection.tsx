@@ -61,7 +61,7 @@ export function ChallengeSection({
       />
 
       {!description.trim() && (
-        <p className="text-xs text-amber-700">
+        <p className="text-xs text-amber-700 dark:text-amber-400">
           A Quest can&rsquo;t be published without a challenge description.
         </p>
       )}

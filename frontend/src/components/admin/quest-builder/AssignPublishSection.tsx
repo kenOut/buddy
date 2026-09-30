@@ -45,9 +45,12 @@ export function AssignPublishSection({
   const [assignmentType, setAssignmentType] = useState<QuestAssignmentType>("EMPLOYEE");
   const [targetId, setTargetId] = useState("");
   const [newAssignmentRequired, setNewAssignmentRequired] = useState(false);
+  const [newAssignmentMinimumScore, setNewAssignmentMinimumScore] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [requiredError, setRequiredError] = useState<string | null>(null);
   const [togglingRequiredId, setTogglingRequiredId] = useState<string | null>(null);
+  const [minimumScoreDraft, setMinimumScoreDraft] = useState<Record<string, string>>({});
+  const [savingMinimumScoreId, setSavingMinimumScoreId] = useState<string | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -74,15 +77,35 @@ export function AssignPublishSection({
     }
     setError(null);
     try {
+      const minimumScore =
+        newAssignmentRequired && newAssignmentMinimumScore.trim()
+          ? Number(newAssignmentMinimumScore)
+          : null;
       const payload =
         assignmentType === "EMPLOYEE"
-          ? { assignment_type: assignmentType, employee_id: targetId, required: newAssignmentRequired }
+          ? {
+              assignment_type: assignmentType,
+              employee_id: targetId,
+              required: newAssignmentRequired,
+              minimum_score: minimumScore,
+            }
           : assignmentType === "DEPARTMENT"
-            ? { assignment_type: assignmentType, department_id: targetId, required: newAssignmentRequired }
-            : { assignment_type: assignmentType, role_id: targetId, required: newAssignmentRequired };
+            ? {
+                assignment_type: assignmentType,
+                department_id: targetId,
+                required: newAssignmentRequired,
+                minimum_score: minimumScore,
+              }
+            : {
+                assignment_type: assignmentType,
+                role_id: targetId,
+                required: newAssignmentRequired,
+                minimum_score: minimumScore,
+              };
       await createQuestAssignment(quest.id, payload);
       setTargetId("");
       setNewAssignmentRequired(false);
+      setNewAssignmentMinimumScore("");
       await loadAssignments();
       await loadReadiness();
       onChanged();
@@ -110,7 +133,17 @@ export function AssignPublishSection({
     setRequiredError(null);
     setTogglingRequiredId(assignment.id);
     try {
-      await updateQuestAssignment(quest.id, assignment.id, { required: !assignment.required });
+      // Turning "required" off makes any configured threshold moot —
+      // clear it server-side too, rather than leaving a dangling
+      // minimum_score on a now-optional assignment (readiness_service
+      // would simply ignore it either way, since only required items
+      // are ever threshold-checked, but leaving stale configuration
+      // around invites confusion the next time this is turned back on).
+      const patch = assignment.required
+        ? { required: false, minimum_score: null }
+        : { required: true };
+      await updateQuestAssignment(quest.id, assignment.id, patch);
+      setMinimumScoreDraft((prev) => ({ ...prev, [assignment.id]: "" }));
       await loadAssignments();
       await loadReadiness();
       onChanged();
@@ -118,6 +151,24 @@ export function AssignPublishSection({
       setRequiredError("Couldn't update whether this assignment is required.");
     } finally {
       setTogglingRequiredId(null);
+    }
+  };
+
+  const handleSaveMinimumScore = async (assignment: QuestAssignment) => {
+    const draft = minimumScoreDraft[assignment.id];
+    const minimumScore = draft === undefined || draft.trim() === "" ? null : Number(draft);
+    if (minimumScore === (assignment.minimum_score ?? null)) return;
+    setRequiredError(null);
+    setSavingMinimumScoreId(assignment.id);
+    try {
+      await updateQuestAssignment(quest.id, assignment.id, { minimum_score: minimumScore });
+      await loadAssignments();
+      await loadReadiness();
+      onChanged();
+    } catch {
+      setRequiredError("Couldn't update the minimum score for this assignment.");
+    } finally {
+      setSavingMinimumScoreId(null);
     }
   };
 
@@ -183,12 +234,12 @@ export function AssignPublishSection({
         </div>
 
         {error && (
-          <p role="alert" className="text-sm text-red-600">
+          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
             {error}
           </p>
         )}
         {requiredError && (
-          <p role="alert" className="text-sm text-red-600">
+          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
             {requiredError}
           </p>
         )}
@@ -211,6 +262,9 @@ export function AssignPublishSection({
                   </span>
                   {!assignment.active && <Badge tone="neutral">inactive</Badge>}
                   {assignment.required && <Badge tone="coral">required</Badge>}
+                  {assignment.required && assignment.minimum_score !== null && (
+                    <Badge tone="info">min {assignment.minimum_score}%</Badge>
+                  )}
                 </div>
                 <div className="flex items-center gap-3">
                   <button
@@ -223,7 +277,7 @@ export function AssignPublishSection({
                   <button
                     type="button"
                     onClick={() => handleDeleteAssignment(assignment.id)}
-                    className="text-xs font-medium text-red-600 hover:underline"
+                    className="text-xs font-medium text-red-600 dark:text-red-400 hover:underline"
                   >
                     Remove
                   </button>
@@ -249,6 +303,31 @@ export function AssignPublishSection({
                   </span>
                 </span>
               </label>
+
+              {assignment.required && (
+                <div className="flex items-center gap-2 pl-6">
+                  <label htmlFor={`min-score-${assignment.id}`} className="text-sm text-foreground">
+                    Minimum score
+                  </label>
+                  <input
+                    id={`min-score-${assignment.id}`}
+                    type="number"
+                    min={0}
+                    max={100}
+                    placeholder="Completion only"
+                    value={minimumScoreDraft[assignment.id] ?? assignment.minimum_score?.toString() ?? ""}
+                    disabled={savingMinimumScoreId === assignment.id}
+                    onChange={(e) =>
+                      setMinimumScoreDraft((prev) => ({ ...prev, [assignment.id]: e.target.value }))
+                    }
+                    onBlur={() => handleSaveMinimumScore(assignment)}
+                    className="w-32 rounded-lg border border-buddy-border bg-buddy-surface px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                  <span className="text-xs text-buddy-muted">
+                    {savingMinimumScoreId === assignment.id ? "Saving…" : "Leave blank for completion only"}
+                  </span>
+                </div>
+              )}
             </li>
           ))}
           {assignments.length === 0 && (
@@ -327,7 +406,10 @@ export function AssignPublishSection({
               id="new-assignment-required"
               type="checkbox"
               checked={newAssignmentRequired}
-              onChange={(e) => setNewAssignmentRequired(e.target.checked)}
+              onChange={(e) => {
+                setNewAssignmentRequired(e.target.checked);
+                if (!e.target.checked) setNewAssignmentMinimumScore("");
+              }}
               className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--buddy-primary)]"
             />
             <span>
@@ -337,6 +419,24 @@ export function AssignPublishSection({
               </span>
             </span>
           </label>
+
+          {newAssignmentRequired && (
+            <div className="flex items-center gap-2 self-start pl-1">
+              <label htmlFor="new-assignment-minimum-score" className="text-sm text-foreground">
+                Minimum score
+              </label>
+              <input
+                id="new-assignment-minimum-score"
+                type="number"
+                min={0}
+                max={100}
+                placeholder="Completion only"
+                value={newAssignmentMinimumScore}
+                onChange={(e) => setNewAssignmentMinimumScore(e.target.value)}
+                className="w-32 rounded-lg border border-buddy-border bg-buddy-surface px-3 py-1.5 text-sm"
+              />
+            </div>
+          )}
         </div>
       </Card>
 
@@ -344,7 +444,7 @@ export function AssignPublishSection({
 
       <Card className="space-y-4">
         {publishError && (
-          <p role="alert" className="text-sm text-red-600">
+          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
             {publishError}
           </p>
         )}

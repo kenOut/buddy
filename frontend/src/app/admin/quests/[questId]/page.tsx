@@ -50,7 +50,7 @@ export default function QuestBuilderPage() {
   if (loadError) {
     return (
       <div className="space-y-4">
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
           {loadError}
         </p>
         <Link href="/admin/quests" className="text-sm text-buddy-primary hover:underline">
@@ -83,9 +83,9 @@ export default function QuestBuilderPage() {
                 className="text-sm hover:underline"
               >
                 {quality.ready ? (
-                  <span className="text-emerald-700">✓ Ready to publish</span>
+                  <span className="text-emerald-700 dark:text-emerald-400">✓ Ready to publish</span>
                 ) : (
-                  <span className="text-amber-700">
+                  <span className="text-amber-700 dark:text-amber-400">
                     ✕ {quality.errors.length} issue{quality.errors.length === 1 ? "" : "s"} to fix
                   </span>
                 )}
@@ -104,7 +104,7 @@ export default function QuestBuilderPage() {
       </div>
 
       {!editable && (
-        <Card className="border-amber-300 bg-amber-50 text-amber-900">
+        <Card className="border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200">
           <p className="text-sm">
             This Quest is <strong>{quest.status.toLowerCase()}</strong> — its challenge, tasks,
             evidence, evaluation criteria, and capability mappings are read-only. Who it&rsquo;s

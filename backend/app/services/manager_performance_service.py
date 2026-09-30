@@ -1,4 +1,5 @@
-"""Manager Performance & Readiness Visibility — Stage 1.
+"""Manager Performance & Readiness Visibility — Stage 1, extended by
+Stage 2 (Performance-Aware Readiness).
 
 Orchestration only — every fact returned here comes from an existing,
 unmodified service (readiness_service, capability_service,
@@ -9,12 +10,13 @@ recomputes a capability profile, or changes what "ready" means — it
 reads what those modules already produced and reshapes it into the
 manager-safe schemas defined in schemas/manager_performance.py.
 
-`blockers` is the one piece of light synthesis this module does: turning
-readiness_service's already-public required-vs-completed id sets
-(required_eligible_quest_ids/required_eligible_mission_ids) into
-plain-language strings, using the same Quest/Mission titles already
-fetched for the missions[]/quests[] sections below — not a second,
-independently-invented notion of "what's blocking readiness."
+Stage 2 removes Stage 1's own local `_build_blockers` entirely:
+blockers, and each row's `minimum_score`/`threshold_status`, now come
+straight from readiness_service.required_quest_items/
+required_mission_items/get_readiness_blockers — the exact same
+per-item state `is_ready()` itself evaluates — rather than a second,
+independently-derived notion of "what's blocking readiness" computed
+in this module (Stage 2 §8).
 """
 
 from statistics import mean
@@ -41,6 +43,20 @@ from app.services import (
     quest_service,
     readiness_service,
 )
+from app.services.readiness_service import RequiredItemState
+
+
+def _threshold_status(item: RequiredItemState | None) -> tuple[float | None, str | None]:
+    """(minimum_score, threshold_status) for a Mission/Quest row — None,
+    None when the item isn't in the required-items list at all (not
+    required for this employee). Otherwise mirrors
+    RequiredItemState.satisfied exactly: INCOMPLETE if not completed,
+    else SATISFIED or BELOW_THRESHOLD."""
+    if item is None:
+        return None, None
+    if not item.completed:
+        return item.minimum_score, "INCOMPLETE"
+    return item.minimum_score, "SATISFIED" if item.satisfied else "BELOW_THRESHOLD"
 
 
 async def _build_employee_info(db: AsyncSession, employee: Employee) -> ManagerEmployeeInfo:
@@ -61,18 +77,19 @@ async def _build_employee_info(db: AsyncSession, employee: Employee) -> ManagerE
 
 
 async def _build_mission_performance(
-    db: AsyncSession, employee_id: str
+    db: AsyncSession, employee: Employee, required_items_by_id: dict[str, RequiredItemState]
 ) -> list[ManagerMissionPerformance]:
     # Two bulk queries, not one per assignment — list_assignments_for_employee
     # already eager-loads .mission; list_attempts_for_employee (added
-    # alongside this stage) mirrors the equivalent Quest-side bulk read.
-    assignments = await mission_service.list_assignments_for_employee(db, employee_id)
-    attempts = await mission_attempt_service.list_attempts_for_employee(db, employee_id)
+    # alongside Stage 1) mirrors the equivalent Quest-side bulk read.
+    assignments = await mission_service.list_assignments_for_employee(db, employee.id)
+    attempts = await mission_attempt_service.list_attempts_for_employee(db, employee.id)
     attempt_by_mission_id = {a.mission_id: a for a in attempts}
 
     results = []
     for assignment in assignments:
         attempt = attempt_by_mission_id.get(assignment.mission_id)
+        minimum_score, threshold_status = _threshold_status(required_items_by_id.get(assignment.mission_id))
         results.append(
             ManagerMissionPerformance(
                 id=assignment.mission_id,
@@ -84,14 +101,16 @@ async def _build_mission_performance(
                 passed=attempt.passed if attempt else None,
                 feedback=attempt.feedback if attempt else None,
                 completed_at=assignment.completed_at,
+                minimum_score=minimum_score,
+                threshold_status=threshold_status,
             )
         )
     return results
 
 
 async def _build_quest_performance(
-    db: AsyncSession, employee: Employee, required_quest_ids: set[str]
-) -> tuple[list[ManagerQuestPerformance], dict]:
+    db: AsyncSession, employee: Employee, required_items_by_id: dict[str, RequiredItemState]
+) -> list[ManagerQuestPerformance]:
     # Same eligibility resolution the employee's own Quest list already
     # uses (quests.py's list_employee_quests) — not a second,
     # independently-derived notion of "which quests does this employee
@@ -104,19 +123,23 @@ async def _build_quest_performance(
     results = []
     for quest in quests:
         attempt = attempt_by_quest_id.get(quest.id)
+        required_item = required_items_by_id.get(quest.id)
+        minimum_score, threshold_status = _threshold_status(required_item)
         results.append(
             ManagerQuestPerformance(
                 id=quest.id,
                 title=quest.title,
-                required=quest.id in required_quest_ids,
+                required=required_item is not None,
                 attempt_status=attempt.status if attempt else None,
                 score=attempt.score if attempt else None,
                 passed=attempt.passed if attempt else None,
                 feedback=attempt.feedback if attempt else None,
                 completed_at=attempt.completed_at if attempt else None,
+                minimum_score=minimum_score,
+                threshold_status=threshold_status,
             )
         )
-    return results, {q.id: q for q in quests}
+    return results
 
 
 async def _build_capabilities(db: AsyncSession, employee_id: str) -> list[ManagerCapabilitySummary]:
@@ -134,71 +157,22 @@ async def _build_capabilities(db: AsyncSession, employee_id: str) -> list[Manage
     ]
 
 
-def _build_blockers(
-    *,
-    onboarding_completed: bool,
-    required_quest_ids: set[str],
-    quest_by_id: dict,
-    quest_attempt_status_by_id: dict[str, str],
-    required_mission_ids: set[str],
-    mission_title_by_id: dict[str, str],
-    mission_assignment_status_by_id: dict[str, str],
-) -> list[str]:
-    blockers: list[str] = []
-    if not onboarding_completed:
-        blockers.append("Onboarding has not been completed yet.")
-
-    for quest_id in sorted(required_quest_ids, key=lambda qid: quest_by_id[qid].title):
-        if quest_attempt_status_by_id.get(quest_id) != "COMPLETED":
-            blockers.append(f'Required quest "{quest_by_id[quest_id].title}" is incomplete.')
-
-    for mission_id in sorted(required_mission_ids, key=lambda mid: mission_title_by_id.get(mid, "")):
-        if mission_assignment_status_by_id.get(mission_id) != "completed":
-            title = mission_title_by_id.get(mission_id, "Untitled mission")
-            blockers.append(f'Required mission "{title}" is incomplete.')
-
-    return blockers
-
-
 async def get_employee_performance(
     db: AsyncSession, employee: Employee
 ) -> ManagerEmployeePerformanceResponse:
     employee_info = await _build_employee_info(db, employee)
 
-    required_quest_ids = await readiness_service.required_eligible_quest_ids(db, employee)
-    required_mission_ids = await readiness_service.required_eligible_mission_ids(db, employee)
+    required_quest_items = await readiness_service.required_quest_items(db, employee)
+    required_mission_items = await readiness_service.required_mission_items(db, employee)
+    required_quest_by_id = {item.id: item for item in required_quest_items}
+    required_mission_by_id = {item.id: item for item in required_mission_items}
 
-    missions = await _build_mission_performance(db, employee.id)
-    quests, quest_by_id = await _build_quest_performance(db, employee, required_quest_ids)
+    missions = await _build_mission_performance(db, employee, required_mission_by_id)
+    quests = await _build_quest_performance(db, employee, required_quest_by_id)
     capabilities = await _build_capabilities(db, employee.id)
 
-    # required_eligible_mission_ids resolves straight from Mission rows
-    # in the employee's department (readiness_service.py), independent
-    # of whether a MissionAssignment row actually exists for this
-    # employee — a required Mission that was created after this
-    # employee's session (and therefore never got provisioned, see P2's
-    # Provisioning Boundary) is a real, valid state, not an error. The
-    # missions[] list above is assignment-derived and would silently
-    # miss such a Mission's title, so blocker text is built from the
-    # full department Mission set instead, not just the assigned subset.
-    department_missions = (
-        await mission_service.list_missions(db, employee.department_id)
-        if employee.department_id
-        else []
-    )
-    mission_title_by_id = {m.id: m.title for m in department_missions}
-
     summary = await readiness_service.get_readiness_summary(db, employee)
-
-    blockers = _build_blockers(
-        onboarding_completed=summary.onboarding_completed,
-        required_quest_ids=required_quest_ids,
-        quest_by_id=quest_by_id,
-        quest_attempt_status_by_id={q.id: q.attempt_status for q in quests if q.attempt_status},
-        required_mission_ids=required_mission_ids,
-        mission_title_by_id=mission_title_by_id,
-        mission_assignment_status_by_id={m.id: m.assignment_status for m in missions},
-    )
+    blockers = await readiness_service.get_readiness_blockers(db, employee)
 
     readiness = ManagerReadinessInfo(
         ready=summary.ready,
@@ -209,6 +183,7 @@ async def get_employee_performance(
         required_mission_count=summary.required_mission_count,
         completed_required_mission_count=summary.completed_required_mission_count,
         remaining_required_mission_count=summary.remaining_required_mission_count,
+        required_items_below_threshold=summary.required_items_below_threshold,
         blockers=blockers,
     )
 

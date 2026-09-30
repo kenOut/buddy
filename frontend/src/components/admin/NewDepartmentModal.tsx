@@ -9,15 +9,19 @@ import type { Department } from "@/lib/types";
 
 export function NewDepartmentModal({
   organizationId,
+  department,
   onClose,
   onCreated,
 }: {
   organizationId: string;
+  /** Present -> edit that Department (PATCH) instead of creating a new one. */
+  department?: Department;
   onClose: () => void;
   onCreated: (department: Department) => void;
 }) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+  const isEdit = department != null;
+  const [name, setName] = useState(department?.name ?? "");
+  const [description, setDescription] = useState(department?.description ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,15 +30,20 @@ export function NewDepartmentModal({
     setError(null);
     setSubmitting(true);
     try {
-      const department = await api.post<Department>("/departments", {
-        organization_id: organizationId,
-        name: name.trim(),
-        description: description.trim() || null,
-      });
-      onCreated(department);
+      const saved = isEdit
+        ? await api.patch<Department>(`/departments/${department!.id}`, {
+            name: name.trim(),
+            description: description.trim() || null,
+          })
+        : await api.post<Department>("/departments", {
+            organization_id: organizationId,
+            name: name.trim(),
+            description: description.trim() || null,
+          });
+      onCreated(saved);
       onClose();
     } catch {
-      setError("Couldn't create the department. Try again.");
+      setError(isEdit ? "Couldn't save changes. Try again." : "Couldn't create the department. Try again.");
     } finally {
       setSubmitting(false);
     }
@@ -61,8 +70,12 @@ export function NewDepartmentModal({
         <Card>
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 id="new-dept-title" className="text-lg font-semibold text-foreground">New department</h2>
-              <p className="mt-1 text-sm text-buddy-muted">Add a department to the org structure.</p>
+              <h2 id="new-dept-title" className="text-lg font-semibold text-foreground">
+                {isEdit ? "Edit department" : "New department"}
+              </h2>
+              <p className="mt-1 text-sm text-buddy-muted">
+                {isEdit ? "Update this department." : "Add a department to the org structure."}
+              </p>
             </div>
             <button
               type="button"
@@ -110,7 +123,7 @@ export function NewDepartmentModal({
                 Cancel
               </Button>
               <Button type="submit" disabled={submitting || !name.trim()}>
-                {submitting ? "Creating…" : "Create department"}
+                {submitting ? "Saving…" : isEdit ? "Save changes" : "Create department"}
               </Button>
             </div>
           </form>

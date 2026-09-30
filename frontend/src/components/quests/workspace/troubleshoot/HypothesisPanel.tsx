@@ -69,7 +69,7 @@ export function HypothesisPanel({
             <button
               type="button"
               onClick={() => removeHypothesis(hypothesis.id)}
-              className="rounded px-2 py-1 text-xs text-red-600 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-buddy-primary"
+              className="rounded px-2 py-1 text-xs text-red-600 dark:text-red-400 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-buddy-primary"
             >
               Remove
             </button>

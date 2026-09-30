@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db
 from app.schemas.mission import MissionCreate, MissionRead, MissionUpdate
 from app.services import mission_quizzes, mission_scenarios, mission_service
-from app.services.mission_service import MissingWorkspaceContentError
+from app.services.mission_service import MissingWorkspaceContentError, MissionHasAttemptsError
 
 router = APIRouter(tags=["missions"])
 
@@ -58,3 +58,14 @@ async def update_mission(mission_id: str, payload: MissionUpdate, db: AsyncSessi
         return await mission_service.update_mission(db, mission, payload)
     except MissingWorkspaceContentError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.delete("/missions/{mission_id}", status_code=204)
+async def delete_mission(mission_id: str, db: AsyncSession = Depends(get_db)):
+    mission = await mission_service.get_mission(db, mission_id)
+    if mission is None:
+        raise HTTPException(status_code=404, detail="Mission not found")
+    try:
+        await mission_service.delete_mission(db, mission)
+    except MissionHasAttemptsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
